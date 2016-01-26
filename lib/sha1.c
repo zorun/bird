@@ -17,8 +17,10 @@
 
 
 void
-sha1_init(struct sha1_context *ctx)
+sha1_init(void *sha1_context)
 {
+  struct sha1_context *ctx = sha1_context;
+
   ctx->h0 = 0x67452301;
   ctx->h1 = 0xefcdab89;
   ctx->h2 = 0x98badcfe;
@@ -167,8 +169,10 @@ sha1_transform(struct sha1_context *ctx, const byte *data)
  * Update the message digest with the contents of BUF with length LEN.
  */
 void
-sha1_update(struct sha1_context *ctx, const byte *buf, uint len)
+sha1_update(void *sha1_context, const byte *buf, uint len)
 {
+  struct sha1_context *ctx = sha1_context;
+
   if (ctx->count)
   {
     /* Fill rest of internal buffer */
@@ -209,8 +213,9 @@ sha1_update(struct sha1_context *ctx, const byte *buf, uint len)
  * Returns: 20 bytes representing the digest.
  */
 byte *
-sha1_final(struct sha1_context *ctx)
+sha1_final(void *sha1_context)
 {
+  struct sha1_context *ctx = sha1_context;
   u32 t, msb, lsb;
 
   sha1_update(ctx, NULL, 0);	/* flush */
@@ -289,8 +294,9 @@ sha1_hash_buffer(byte *outbuf, const byte *buffer, uint length)
 }
 
 void
-sha1_hmac_init(struct sha1_hmac_context *ctx, const byte *key, uint keylen)
+sha1_hmac_init(void *sha1_hmac_context, const byte *key, uint keylen)
 {
+  struct sha1_hmac_context *ctx = sha1_hmac_context;
   byte keybuf[SHA1_BLOCK_SIZE], buf[SHA1_BLOCK_SIZE];
 
   /* Hash the key if necessary */
@@ -320,15 +326,19 @@ sha1_hmac_init(struct sha1_hmac_context *ctx, const byte *key, uint keylen)
 }
 
 void
-sha1_hmac_update(struct sha1_hmac_context *ctx, const byte *data, uint datalen)
+sha1_hmac_update(void *sha1_hmac_context, const byte *data, uint datalen)
 {
+  struct sha1_hmac_context *ctx = sha1_hmac_context;
+
   /* Just update the inner digest */
   sha1_update(&ctx->ictx, data, datalen);
 }
 
 byte *
-sha1_hmac_final(struct sha1_hmac_context *ctx)
+sha1_hmac_final(void *sha1_hmac_context)
 {
+  struct sha1_hmac_context *ctx = sha1_hmac_context;
+
   /* Finish the inner digest */
   byte *isha = sha1_final(&ctx->ictx);
 

@@ -39,8 +39,10 @@ static void md5_transform(u32 buf[4], u32 const in[16]);
  * initialization constants.
  */
 void
-md5_init(struct md5_context *ctx)
+md5_init(void *md5_context)
 {
+  struct md5_context *ctx = md5_context;
+
   ctx->buf[0] = 0x67452301;
   ctx->buf[1] = 0xefcdab89;
   ctx->buf[2] = 0x98badcfe;
@@ -55,8 +57,9 @@ md5_init(struct md5_context *ctx)
  * of bytes.
  */
 void
-md5_update(struct md5_context *ctx, const byte *buf, uint len)
+md5_update(void *md5_context, const byte *buf, uint len)
 {
+  struct md5_context *ctx = md5_context;
   u32 t;
 
   /* Update bitcount */
@@ -105,8 +108,9 @@ md5_update(struct md5_context *ctx, const byte *buf, uint len)
  * 1 0* (64-bit count of bits processed, MSB-first)
  */
 byte *
-md5_final(struct md5_context *ctx)
+md5_final(void *md5_context)
 {
+  struct md5_context *ctx = md5_context;
   uint count;
   byte *p;
 
@@ -263,7 +267,7 @@ md5_transform(u32 buf[4], u32 const in[16])
  */
 
 static void
-md5_hash_buffer(byte *outbuf, const byte *buffer, size_t length)
+md5_hash_buffer(byte *outbuf, const byte *buffer, uint length)
 {
   struct md5_context hd_tmp;
 
@@ -273,8 +277,9 @@ md5_hash_buffer(byte *outbuf, const byte *buffer, size_t length)
 }
 
 void
-md5_hmac_init(struct md5_hmac_context *ctx, const byte *key, size_t keylen)
+md5_hmac_init(void *md5_hmac_context, const byte *key, uint keylen)
 {
+  struct md5_hmac_context *ctx = md5_hmac_context;
   byte keybuf[MD5_BLOCK_SIZE], buf[MD5_BLOCK_SIZE];
 
   /* Hash the key if necessary */
@@ -304,15 +309,19 @@ md5_hmac_init(struct md5_hmac_context *ctx, const byte *key, size_t keylen)
 }
 
 void
-md5_hmac_update(struct md5_hmac_context *ctx, const byte *buf, size_t buflen)
+md5_hmac_update(void *md5_hmac_context, const byte *buf, uint buflen)
 {
+  struct md5_hmac_context *ctx = md5_hmac_context;
+
   /* Just update the inner digest */
   md5_update(&ctx->ictx, buf, buflen);
 }
 
 byte *
-md5_hmac_final(struct md5_hmac_context *ctx)
+md5_hmac_final(void *md5_hmac_context)
 {
+  struct md5_hmac_context *ctx = md5_hmac_context;
+
   /* Finish the inner digest */
   byte *isha = md5_final(&ctx->ictx);
 

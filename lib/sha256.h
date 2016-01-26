@@ -35,16 +35,16 @@ struct sha256_context {
 #define sha224_context sha256_context
 
 
-void sha256_init(struct sha256_context *ctx);
-void sha224_init(struct sha224_context *ctx);
+void sha256_init(void *sha256_context);
+void sha224_init(void *sha224_context);
 
-void sha256_update(struct sha256_context *ctx, const byte *buf, size_t len);
-static inline void sha224_update(struct sha224_context *ctx, const byte *buf, size_t len)
-{ sha256_update(ctx, buf, len); }
+void sha256_update(void *sha256_context, const byte *data, uint size);
+static inline void sha224_update(void *sha224_context, const byte *data, uint size)
+{ sha256_update(sha224_context, data, size); }
 
-byte *sha256_final(struct sha256_context *ctx);
-static inline byte *sha224_final(struct sha224_context *ctx)
-{ return sha256_final(ctx); }
+byte *sha256_final(void *sha256_context);
+static inline byte *sha224_final(void *sha224_context)
+{ return sha256_final(sha224_context); }
 
 
 /*
@@ -60,14 +60,14 @@ struct sha256_hmac_context
 #define sha224_hmac_context sha256_hmac_context
 
 
-void sha256_hmac_init(struct sha256_hmac_context *ctx, const byte *key, size_t keylen);
-void sha224_hmac_init(struct sha224_hmac_context *ctx, const byte *key, size_t keylen);
+void sha256_hmac_init(void *sha256_hmac_context, const byte *key, uint keylen);
+void sha224_hmac_init(void *sha224_hmac_context, const byte *key, uint keylen);
 
-void sha256_hmac_update(struct sha256_hmac_context *ctx, const byte *buf, size_t buflen);
-void sha224_hmac_update(struct sha224_hmac_context *ctx, const byte *buf, size_t buflen);
+void sha256_hmac_update(void *sha256_hmac_context, const byte *data, uint size);
+void sha224_hmac_update(void *sha224_hmac_context, const byte *data, uint size);
 
-byte *sha256_hmac_final(struct sha256_hmac_context *ctx);
-byte *sha224_hmac_final(struct sha224_hmac_context *ctx);
+byte *sha256_hmac_final(void *sha256_hmac_context);
+byte *sha224_hmac_final(void *sha224_hmac_context);
 
 
 #endif /* _BIRD_SHA256_H_ */

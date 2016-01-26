@@ -34,15 +34,17 @@ struct sha1_context {
   uint count;
 };
 
+/* Initialize new algorithm run in the @sha1_context. */
+void sha1_init(void *sha1_context);
 
-void sha1_init(struct sha1_context *ctx); /* Initialize new algorithm run in the @ctx context. **/
 /*
- * Push another @len bytes of data pointed to by @buf onto the SHA1 hash
- * currently in @ctx. You can call this any times you want on the same hash (and
+ * Push another @size bytes of data pointed to by @data onto the SHA1 hash
+ * currently in @sha1_context. You can call this any times you want on the same hash (and
  * you do not need to reinitialize it by @sha1_init()). It has the same effect
  * as concatenating all the data together and passing them at once.
  */
-void sha1_update(struct sha1_context *ctx, const byte *buf, uint len);
+void sha1_update(void *sha1_context, const byte *data, uint size);
+
 /*
  * No more @sha1_update() calls will be done. This terminates the hash and
  * returns a pointer to it.
@@ -50,7 +52,7 @@ void sha1_update(struct sha1_context *ctx, const byte *buf, uint len);
  * Note that the pointer points into data in the @ctx context. If it ceases to
  * exist, the pointer becomes invalid.
  */
-byte *sha1_final(struct sha1_context *ctx);
+byte *sha1_final(void *sha1_context);
 
 /*
  * A convenience one-shot function for SHA1 hash. It is equivalent to this
@@ -78,9 +80,9 @@ struct sha1_hmac_context {
   struct sha1_context octx;
 };
 
-void sha1_hmac_init(struct sha1_hmac_context *ctx, const byte *key, uint keylen);	/* Initialize HMAC with context @ctx and the given key. See sha1_init(). */
-void sha1_hmac_update(struct sha1_hmac_context *ctx, const byte *data, uint datalen);	/* Hash another @datalen bytes of data. See sha1_update(). */
-byte *sha1_hmac_final(struct sha1_hmac_context *ctx);					/* Terminate the HMAC and return a pointer to the allocated hash. See sha1_final(). */
+void sha1_hmac_init(void *sha1_hmac_context, const byte *key, uint keylen);
+void sha1_hmac_update(void *sha1_hmac_context, const byte *data, uint size);
+byte *sha1_hmac_final(void *sha1_hmac_context);
 
 
 #endif /* _BIRD_SHA1_H_ */

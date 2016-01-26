@@ -25,9 +25,9 @@ struct md5_context {
   byte in[64];
 };
 
-void md5_init(struct md5_context *ctx);
-void md5_update(struct md5_context *ctx, const byte *buf, uint len);
-byte *md5_final(struct md5_context *ctx);
+void md5_init(void *md5_context);
+void md5_update(void *md5_context, const byte *data, uint size);
+byte *md5_final(void *md5_context);
 
 
 /*
@@ -39,9 +39,9 @@ struct md5_hmac_context {
   struct md5_context octx;
 };
 
-void md5_hmac_init(struct md5_hmac_context *ctx, const byte *key, size_t keylen);
-void md5_hmac_update(struct md5_hmac_context *ctx, const byte *buf, size_t buflen);
-byte *md5_hmac_final(struct md5_hmac_context *ctx);
+void md5_hmac_init(void *md5_hmac_context, const byte *key, uint keylen);
+void md5_hmac_update(void *md5_hmac_context, const byte *data, uint size);
+byte *md5_hmac_final(void *md5_hmac_context);
 
 
 #endif /* _BIRD_MD5_H_ */

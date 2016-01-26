@@ -17,8 +17,10 @@
 // #define SHA512_UNROLLED
 
 void
-sha512_init(struct sha512_context *ctx)
+sha512_init(void *sha512_context)
 {
+  struct sha512_context *ctx = sha512_context;
+
   ctx->h0 = U64(0x6a09e667f3bcc908);
   ctx->h1 = U64(0xbb67ae8584caa73b);
   ctx->h2 = U64(0x3c6ef372fe94f82b);
@@ -33,8 +35,10 @@ sha512_init(struct sha512_context *ctx)
 }
 
 void
-sha384_init(struct sha384_context *ctx)
+sha384_init(void *sha384_context)
 {
+  struct sha384_context *ctx = sha384_context;
+
   ctx->h0 = U64(0xcbbb9d5dc1059ed8);
   ctx->h1 = U64(0x629a292a367cd507);
   ctx->h2 = U64(0x9159015a3070dd17);
@@ -126,8 +130,10 @@ static const u64 k[] =
  * Transform the message W which consists of 16 64-bit-words
  */
 static uint
-sha512_transform(struct sha512_context *ctx, const byte *data)
+sha512_transform(void *sha512_context, const byte *data)
 {
+  struct sha512_context *ctx = sha512_context;
+
   u64 a, b, c, d, e, f, g, h;
   u64 w[16];
   uint t;
@@ -389,8 +395,10 @@ sha512_transform(struct sha512_context *ctx, const byte *data)
 }
 
 void
-sha512_update(struct sha512_context *ctx, const byte *buf, size_t len)
+sha512_update(void *sha512_context, const byte *buf, uint len)
 {
+  struct sha512_context *ctx = sha512_context;
+
   if (ctx->count)
   {
     /* Fill rest of internal buffer */
@@ -432,8 +440,10 @@ sha512_update(struct sha512_context *ctx, const byte *buf, size_t len)
  * first 48 of those bytes.
  */
 byte *
-sha512_final(struct sha512_context *ctx)
+sha512_final(void *sha512_context)
 {
+  struct sha512_context *ctx = sha512_context;
+
   u64 t, th, msb, lsb;
 
   sha512_update(ctx, NULL, 0);	/* flush */
@@ -497,7 +507,7 @@ sha512_final(struct sha512_context *ctx)
  */
 
 static void
-sha512_hash_buffer(byte *outbuf, const byte *buffer, size_t length)
+sha512_hash_buffer(byte *outbuf, const byte *buffer, uint length)
 {
   struct sha512_context ctx;
 
@@ -507,8 +517,10 @@ sha512_hash_buffer(byte *outbuf, const byte *buffer, size_t length)
 }
 
 void
-sha512_hmac_init(struct sha512_hmac_context *ctx, const byte *key, size_t keylen)
+sha512_hmac_init(void *sha512_hmac_context, const byte *key, uint keylen)
 {
+  struct sha512_hmac_context *ctx = sha512_hmac_context;
+
   byte keybuf[SHA512_BLOCK_SIZE], buf[SHA512_BLOCK_SIZE];
 
   /* Hash the key if necessary */
@@ -538,15 +550,19 @@ sha512_hmac_init(struct sha512_hmac_context *ctx, const byte *key, size_t keylen
 }
 
 void
-sha512_hmac_update(struct sha512_hmac_context *ctx, const byte *buf, size_t buflen)
+sha512_hmac_update(void *sha512_hmac_context, const byte *buf, uint buflen)
 {
+  struct sha512_hmac_context *ctx = sha512_hmac_context;
+
   /* Just update the inner digest */
   sha512_update(&ctx->ictx, buf, buflen);
 }
 
 byte *
-sha512_hmac_final(struct sha512_hmac_context *ctx)
+sha512_hmac_final(void *sha512_hmac_context)
 {
+  struct sha512_hmac_context *ctx = sha512_hmac_context;
+
   /* Finish the inner digest */
   byte *isha = sha512_final(&ctx->ictx);
 
@@ -561,7 +577,7 @@ sha512_hmac_final(struct sha512_hmac_context *ctx)
  */
 
 static void
-sha384_hash_buffer(byte *outbuf, const byte *buffer, size_t length)
+sha384_hash_buffer(byte *outbuf, const byte *buffer, uint length)
 {
   struct sha384_context ctx;
 
@@ -571,8 +587,10 @@ sha384_hash_buffer(byte *outbuf, const byte *buffer, size_t length)
 }
 
 void
-sha384_hmac_init(struct sha384_hmac_context *ctx, const byte *key, size_t keylen)
+sha384_hmac_init(void *sha384_hmac_context, const byte *key, uint keylen)
 {
+  struct sha384_hmac_context *ctx = sha384_hmac_context;
+
   byte keybuf[SHA384_BLOCK_SIZE], buf[SHA384_BLOCK_SIZE];
 
   /* Hash the key if necessary */
@@ -602,15 +620,19 @@ sha384_hmac_init(struct sha384_hmac_context *ctx, const byte *key, size_t keylen
 }
 
 void
-sha384_hmac_update(struct sha384_hmac_context *ctx, const byte *buf, size_t buflen)
+sha384_hmac_update(void *sha384_hmac_context, const byte *buf, uint buflen)
 {
+  struct sha384_hmac_context *ctx = sha384_hmac_context;
+
   /* Just update the inner digest */
   sha384_update(&ctx->ictx, buf, buflen);
 }
 
 byte *
-sha384_hmac_final(struct sha384_hmac_context *ctx)
+sha384_hmac_final(void *sha384_hmac_context)
 {
+  struct sha384_hmac_context *ctx = sha384_hmac_context;
+
   /* Finish the inner digest */
   byte *isha = sha384_final(&ctx->ictx);
 
