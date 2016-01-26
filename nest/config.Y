@@ -13,6 +13,7 @@ CF_HDR
 #include "nest/password.h"
 #include "nest/cmds.h"
 #include "lib/lists.h"
+#include "lib/crypto.h"
 
 CF_DEFINES
 
@@ -68,6 +69,7 @@ CF_KEYWORDS(INTERFACE, IMPORT, EXPORT, FILTER, NONE, TABLE, STATES, ROUTES, FILT
 CF_KEYWORDS(IPV4, IPV6, VPN4, VPN6, ROA4, ROA6)
 CF_KEYWORDS(RECEIVE, LIMIT, ACTION, WARN, BLOCK, RESTART, DISABLE, KEEP, FILTERED)
 CF_KEYWORDS(PASSWORD, FROM, PASSIVE, TO, ID, EVENTS, PACKETS, PROTOCOLS, INTERFACES)
+CF_KEYWORDS(ALGORITHM, KEYED, MD5, HMAC, SHA1, SHA256, SHA384, SHA512)
 CF_KEYWORDS(PRIMARY, STATS, COUNT, FOR, COMMANDS, PREEXPORT, NOEXPORT, GENERATE) /* ,ROA */
 CF_KEYWORDS(LISTEN, BGP, V6ONLY, DUAL, ADDRESS, PORT, PASSWORDS, DESCRIPTION, SORTED)
 CF_KEYWORDS(RELOAD, IN, OUT, MRTDUMP, MESSAGES, RESTRICT, MEMORY, IGP_METRIC, CLASS, DSCP)
@@ -86,7 +88,7 @@ CF_ENUM(T_ENUM_ROA, ROA_, UNKNOWN, VALID, INVALID)
 %type <s> optsym
 %type <ra> r_args
 %type <sd> sym_args
-%type <i> proto_start echo_mask echo_size debug_mask debug_list debug_flag mrtdump_mask mrtdump_list mrtdump_flag export_mode limit_action net_type table_sorted tos
+%type <i> proto_start echo_mask echo_size debug_mask debug_list debug_flag mrtdump_mask mrtdump_list mrtdump_flag export_mode limit_action net_type table_sorted tos password_algorithm
 %type <ps> proto_patt proto_patt2
 %type <cc> channel_start proto_channel
 %type <cl> limit_spec
@@ -455,9 +457,17 @@ password_item_params:
  | ACCEPT TO datetime ';' password_item_params { this_p_item->accto = $3; }
  | ACCEPT FROM datetime TO datetime ';' password_item_params { this_p_item->accfrom = $3; this_p_item->accto = $5; }
  | ID expr ';' password_item_params { this_p_item->id = $2; if ($2 <= 0) cf_error("Password ID has to be greated than zero."); }
+ | ACCEPT FROM datetime TO datetime ';' password_item_params { this_p_item->accfrom = $3; this_p_item->accto = $5; }
+ | ALGORITHM password_algorithm ';' password_item_params { this_p_item->crypto_type = $2; }
  ;
 
-
+password_algorithm:
+   KEYED MD5	{ $$ = CRYPTO_ALG_MD5; }
+ | HMAC SHA1	{ $$ = CRYPTO_ALG_HMAC_SHA1; }
+ | HMAC SHA256 { $$ = CRYPTO_ALG_HMAC_SHA256; }
+ | HMAC SHA384 { $$ = CRYPTO_ALG_HMAC_SHA384; }
+ | HMAC SHA512 { $$ = CRYPTO_ALG_HMAC_SHA512; }
+ ;
 
 /* Core commands */
 CF_CLI_HELP(SHOW, ..., [[Show status information]])

@@ -10,11 +10,13 @@
 #ifndef PASSWORD_H
 #define PASSWORD_H
 #include "sysdep/unix/timer.h"
+#include "lib/crypto.h"
 
 struct password_item {
   node n;
   char *password;
   int id;
+  u8 crypto_type; 	/* Encryption type CRYPTO_ALG_* */
   bird_clock_t accfrom, accto, genfrom, gento;
 };
 
