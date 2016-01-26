@@ -137,12 +137,14 @@ config_parse(struct config *c)
   rt_preconfig(c);
 /*  roa_preconfig(c); */
   cf_parse();
-  protos_postconfig(c);
+
   if (EMPTY_LIST(c->protos))
     cf_error("No protocol is specified in the config file");
-  /* XXXX */
+
+  /*
   if (!c->router_id)
     cf_error("Router ID must be configured manually");
+  */
 
   done = 1;
 
