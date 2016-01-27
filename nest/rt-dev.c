@@ -68,6 +68,12 @@ dev_ifa_notify(struct proto *P, uint flags, struct ifa *ad)
 
       DBG("dev_if_notify: %s:%I going up\n", ad->iface->name, ad->ip);
 
+      if (ad->prefix.type != c->net_type)
+      {
+	DBG("dev_if_notify: table %s and %N are not match types\n", c->table->name, ad->prefix);
+	return;
+      }
+
       /* Use iface ID as local source ID */
       struct rte_src *src = rt_get_source(P, ad->iface->index);
 
