@@ -13,6 +13,7 @@
 
 #include "rip.h"
 #include "lib/md5.h"
+#include "lib/crypto.h"
 
 
 #define RIP_CMD_REQUEST		1	/* want info */
@@ -221,7 +222,7 @@ rip_fill_authentication(struct rip_proto *p, struct rip_iface *ifa, struct rip_p
     auth->auth_type = htons(RIP_AUTH_CRYPTO);
     auth->packet_len = htons(*plen);
     auth->key_id = pass->id;
-    auth->auth_len = sizeof(struct rip_auth_tail) + RIP_MD5_LENGTH;
+    auth->auth_len = sizeof(struct rip_auth_tail) + crypto_get_hash_length(pass->crypto_type);
     auth->seq_num = ifa->csn_ready ? htonl(ifa->csn) : 0;
     auth->unused1 = 0;
     auth->unused2 = 0;
@@ -238,14 +239,13 @@ rip_fill_authentication(struct rip_proto *p, struct rip_iface *ifa, struct rip_p
     struct rip_auth_tail *tail = (void *) ((byte *) pkt + *plen);
     tail->must_be_ffff = htons(0xffff);
     tail->must_be_0001 = htons(0x0001);
-    strncpy(tail->auth_data, pass->password, RIP_MD5_LENGTH);
 
-    *plen += sizeof(struct rip_auth_tail) + RIP_MD5_LENGTH;
+    union crypto_context ctx;
+    byte *hash = crypto(&ctx, pass->crypto_type, pass->password, strlen(pass->password), (const byte *) pkt, *plen + sizeof(struct rip_auth_tail));
 
-    struct md5_context ctx;
-    md5_init(&ctx);
-    md5_update(&ctx, (byte *) pkt, *plen);
-    memcpy(tail->auth_data, md5_final(&ctx), RIP_MD5_LENGTH);
+    memcpy(tail->auth_data, hash, crypto_get_hash_length(pass->crypto_type));
+
+    *plen += sizeof(struct rip_auth_tail) + crypto_get_hash_length(pass->crypto_type);
     return;
 
   default:
@@ -312,16 +312,11 @@ rip_check_authentication(struct rip_proto *p, struct rip_iface *ifa, struct rip_
       return 0;
     }
 
-    char received[RIP_MD5_LENGTH];
-    memcpy(received, tail->auth_data, RIP_MD5_LENGTH);
-    strncpy(tail->auth_data, pass->password, RIP_MD5_LENGTH);
+    union crypto_context c;
+    byte *expected = crypto(&c, pass->crypto_type, pass->password, pass->password_len, (byte *) pkt, data_len + sizeof(struct rip_auth_tail));
+    byte *received = tail->auth_data;
 
-    struct md5_context ctx;
-    md5_init(&ctx);
-    md5_update(&ctx, (byte *) pkt, *plen);
-    char *computed = md5_final(&ctx);
-
-    if (memcmp(received, computed, RIP_MD5_LENGTH))
+    if (memcmp(received, expected, crypto_get_hash_length(pass->crypto_type)))
       DROP("wrong MD5 digest", pass->id);
 
     *plen = data_len;
