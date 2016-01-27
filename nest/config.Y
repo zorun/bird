@@ -439,6 +439,7 @@ password_item_begin:
      }
      this_p_item = cfg_alloc(sizeof (struct password_item));
      this_p_item->password = $2;
+     this_p_item->password_len = strlen($2);
      this_p_item->genfrom = 0;
      this_p_item->gento = TIME_INFINITY;
      this_p_item->accfrom = 0;

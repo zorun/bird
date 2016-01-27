@@ -15,6 +15,7 @@
 struct password_item {
   node n;
   char *password;
+  uint password_len;
   int id;
   u8 crypto_type; 	/* Encryption type CRYPTO_ALG_* */
   bird_clock_t accfrom, accto, genfrom, gento;
