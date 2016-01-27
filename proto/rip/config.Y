@@ -59,6 +59,8 @@ rip_proto_start: proto_start rip_variant
   RIP_CFG->infinity = RIP_DEFAULT_INFINITY;
   RIP_CFG->min_timeout_time = 60;
   RIP_CFG->max_garbage_time = 60;
+
+  default_crypto_type = CRYPTO_ALG_MD5;
 };
 
 rip_proto_item:

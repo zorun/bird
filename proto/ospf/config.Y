@@ -158,6 +158,7 @@ ospf_proto_start: proto_start ospf_variant
   init_list(&OSPF_CFG->vlink_list);
   OSPF_CFG->tick = OSPF_DEFAULT_TICK;
   OSPF_CFG->ospf2 = $2;
+  default_crypto_type = ospf_cfg_is_v2() ? CRYPTO_ALG_MD5 : CRYPTO_ALG_HMAC_SHA256;
 };
 
 ospf_proto:

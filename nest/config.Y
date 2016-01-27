@@ -25,6 +25,7 @@ static struct iface_patt_node *this_ipn;
 static list *this_p_list;
 static struct password_item *this_p_item;
 static int password_id;
+static int default_crypto_type;
 
 static void
 iface_patt_check(void)
@@ -445,6 +446,7 @@ password_item_begin:
      this_p_item->accfrom = 0;
      this_p_item->accto = TIME_INFINITY;
      this_p_item->id = password_id++;
+     this_p_item->crypto_type = default_crypto_type;
      add_tail(this_p_list, &this_p_item->n);
    }
 ;
