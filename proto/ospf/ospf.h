@@ -28,6 +28,7 @@
 #include "nest/bfd.h"
 #include "conf/conf.h"
 #include "lib/string.h"
+#include "lib/crypto.h"
 
 
 #ifdef LOCAL_DEBUG
@@ -175,7 +176,6 @@ struct ospf_iface_patt
 #define OSPF_AUTH_NONE 0
 #define OSPF_AUTH_SIMPLE 1
 #define OSPF_AUTH_CRYPT 2
-#define OSPF_AUTH_CRYPT_SIZE 16
   u8 strictnbma;
   u8 check_link;
   u8 ecmp_weight;
@@ -482,7 +482,7 @@ struct ospf_packet
   u8 autype;			/* Undefined for OSPFv3 */
 };
 
-struct ospf_md5
+struct ospf_auth_crypto
 {
   u16 zero;
   u8 keyid;
@@ -493,7 +493,7 @@ struct ospf_md5
 union ospf_auth
 {
   u8 password[8];
-  struct ospf_md5 md5;
+  struct ospf_auth_crypto field;
 };
 
 /* Packet types */

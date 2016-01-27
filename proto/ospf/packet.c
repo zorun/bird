@@ -38,14 +38,17 @@ ospf_pkt_maxsize(struct ospf_proto *p, struct ospf_iface *ifa)
 
   /* Relevant just for OSPFv2 */
   if (ifa->autype == OSPF_AUTH_CRYPT)
-    headers += OSPF_AUTH_CRYPT_SIZE;
+    headers += crypto_get_hash_length(CRYPTO_ALG_MAX_VALUE);
 
   return ifa->tx_length - headers;
 }
 
-/* We assume OSPFv2 in ospf_pkt_finalize() */
-static void
-ospf_pkt_finalize(struct ospf_iface *ifa, struct ospf_packet *pkt)
+/*
+ * We assume OSPFv2 in ospf_pkt_finalize()
+ * Return an extra packet size that should be added to a final packet size
+ */
+static uint
+ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
 {
   struct password_item *passwd = NULL;
   union ospf_auth *auth = (void *) (pkt + 1);
@@ -65,7 +68,7 @@ ospf_pkt_finalize(struct ospf_iface *ifa, struct ospf_packet *pkt)
     if (!passwd)
     {
       log(L_ERR "No suitable password found for authentication");
-      return;
+      break;
     }
     strncpy(auth->password, passwd->password, sizeof(auth->password));
 
@@ -82,7 +85,7 @@ ospf_pkt_finalize(struct ospf_iface *ifa, struct ospf_packet *pkt)
     if (!passwd)
     {
       log(L_ERR "No suitable password found for authentication");
-      return;
+      break;
     }
 
     /* Perhaps use random value to prevent replay attacks after
@@ -100,27 +103,22 @@ ospf_pkt_finalize(struct ospf_iface *ifa, struct ospf_packet *pkt)
 
     ifa->csn_use = now;
 
-    auth->md5.zero = 0;
-    auth->md5.keyid = passwd->id;
-    auth->md5.len = OSPF_AUTH_CRYPT_SIZE;
-    auth->md5.csn = htonl(ifa->csn);
+    auth->field.zero = 0;
+    auth->field.keyid = passwd->id;
+    auth->field.len = crypto_get_hash_length(passwd->crypto_type);
+    auth->field.csn = htonl(ifa->csn);
 
     void *tail = ((void *) pkt) + plen;
-    char password[OSPF_AUTH_CRYPT_SIZE];
-    strncpy(password, passwd->password, sizeof(password));
-
-    struct md5_context ctx;
-    md5_init(&ctx);
-    md5_update(&ctx, (char *) pkt, plen);
-    md5_update(&ctx, password, OSPF_AUTH_CRYPT_SIZE);
-    memcpy((byte *) tail, md5_final(&ctx), MD5_SIZE);
-    break;
+    union crypto_context c;
+    byte *hash = crypto(&c, passwd->crypto_type, passwd->password, passwd->password_len, (const byte *) pkt, plen);
+    memcpy((byte *) tail, hash, auth->field.len);
+    return auth->field.len;
 
   default:
     bug("Unknown authentication type");
   }
+  return 0;
 }
-
 
 /* We assume OSPFv2 in ospf_pkt_checkauth() */
 static int
@@ -154,13 +152,8 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
     return 1;
 
   case OSPF_AUTH_CRYPT:
-    if (auth->md5.len != OSPF_AUTH_CRYPT_SIZE)
-      DROP("invalid MD5 digest length", auth->md5.len);
-
-    if (plen + OSPF_AUTH_CRYPT_SIZE > len)
-      DROP("length mismatch", len);
-
-    u32 rcv_csn = ntohl(auth->md5.csn);
+  {
+    u32 rcv_csn = ntohl(auth->field.csn);
     if (n && (rcv_csn < n->csn))
       // DROP("lower sequence number", rcv_csn);
     {
@@ -171,27 +164,31 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
       return 0;
     }
 
-    pass = password_find_by_id(ifa->passwords, auth->md5.keyid);
+    pass = password_find_by_id(ifa->passwords, auth->field.keyid);
     if (!pass)
-      DROP("no suitable password found", auth->md5.keyid);
+      DROP("no suitable password found", auth->field.keyid);
+
+    uint crypt_size = crypto_get_hash_length(pass->crypto_type);
+
+    if (auth->field.len != crypt_size)
+      DROP("invalid cryptographic digest length", auth->field.len);
+
+    if (plen + crypt_size > len)
+      DROP("length mismatch", len);
 
     byte *tail = ((byte *) pkt) + plen;
-    char received[OSPF_AUTH_CRYPT_SIZE];
-    memcpy(received, tail, OSPF_AUTH_CRYPT_SIZE);
-    strncpy(tail, pass->password, OSPF_AUTH_CRYPT_SIZE);
 
-    struct md5_context ctx;
-    md5_init(&ctx);
-    md5_update(&ctx, (byte *) pkt, plen + OSPF_AUTH_CRYPT_SIZE);
-    char *computed = md5_final(&ctx);
-
-    if (memcmp(received, computed, OSPF_AUTH_CRYPT_SIZE))
-      DROP("wrong MD5 digest", pass->id);
+    union crypto_context ctx;
+    byte *expected = crypto(&ctx, pass->crypto_type, pass->password, pass->password_len, (const byte *) pkt, plen);
+    byte *received = tail;
+    if (memcmp(received, expected, crypt_size))
+      DROP("wrong cryptographic digest", pass->id);
 
     if (n)
       n->csn = rcv_csn;
 
     return 1;
+  }
 
   default:
     bug("Unknown authentication type");
@@ -475,12 +472,7 @@ ospf_send_to(struct ospf_iface *ifa, ip_addr dst)
   int plen = ntohs(pkt->length);
 
   if (ospf_is_v2(ifa->oa->po))
-  {
-    if (ifa->autype == OSPF_AUTH_CRYPT)
-      plen += OSPF_AUTH_CRYPT_SIZE;
-
-    ospf_pkt_finalize(ifa, pkt);
-  }
+    plen += ospf_pkt_finalize(ifa, pkt);
 
   int done = sk_send_to(sk, plen, dst, 0);
   if (!done)

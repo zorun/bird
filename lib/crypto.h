@@ -28,7 +28,7 @@
 #define CRYPTO_ALG_HMAC_SHA256	10
 #define CRYPTO_ALG_HMAC_SHA384	11
 #define CRYPTO_ALG_HMAC_SHA512	12
-#define CRYPTO_ALG_MAX_VALUE CRYPTO_ALG_HMAC_SHA512
+#define CRYPTO_ALG_MAX_VALUE CRYPTO_ALG_HMAC_SHA512 /* the last one and the longest hash as well */
 
 union crypto_context {
   struct md5_context md5;

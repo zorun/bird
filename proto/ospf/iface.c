@@ -73,7 +73,7 @@ ospf_iface_assure_bufsize(struct ospf_iface *ifa, uint plen)
 
   /* This is relevant just for OSPFv2 */
   if (ifa->autype == OSPF_AUTH_CRYPT)
-    plen += OSPF_AUTH_CRYPT_SIZE;
+    plen += crypto_get_hash_length(CRYPTO_ALG_MAX_VALUE);
 
   if (plen <= ifa->sk->tbsize)
     return 0;
