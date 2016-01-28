@@ -460,16 +460,15 @@ password_item_params:
  | ACCEPT TO datetime ';' password_item_params { this_p_item->accto = $3; }
  | ACCEPT FROM datetime TO datetime ';' password_item_params { this_p_item->accfrom = $3; this_p_item->accto = $5; }
  | ID expr ';' password_item_params { this_p_item->id = $2; if ($2 <= 0) cf_error("Password ID has to be greated than zero."); }
- | ACCEPT FROM datetime TO datetime ';' password_item_params { this_p_item->accfrom = $3; this_p_item->accto = $5; }
  | ALGORITHM password_algorithm ';' password_item_params { this_p_item->crypto_type = $2; }
  ;
 
 password_algorithm:
    KEYED MD5	{ $$ = CRYPTO_ALG_MD5; }
  | HMAC SHA1	{ $$ = CRYPTO_ALG_HMAC_SHA1; }
- | HMAC SHA256 { $$ = CRYPTO_ALG_HMAC_SHA256; }
- | HMAC SHA384 { $$ = CRYPTO_ALG_HMAC_SHA384; }
- | HMAC SHA512 { $$ = CRYPTO_ALG_HMAC_SHA512; }
+ | HMAC SHA256	{ $$ = CRYPTO_ALG_HMAC_SHA256; }
+ | HMAC SHA384	{ $$ = CRYPTO_ALG_HMAC_SHA384; }
+ | HMAC SHA512	{ $$ = CRYPTO_ALG_HMAC_SHA512; }
  ;
 
 /* Core commands */
