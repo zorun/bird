@@ -643,11 +643,11 @@ agreement").
 	protocol packets are processed in the local TX queues. This option is
 	Linux specific. Default value is 7 (highest priority, privileged traffic).
 
-	<tag><label id="dsc-pass">password "<m/password/" [ { id <m/num/; generate from <m/time/; generate to <m/time/; accept from <m/time/; accept to <m/time/; } ]</tag>
-	Specifies a password that can be used by the protocol. Password option
-	can be used more times to specify more passwords. If more passwords are
-	specified, it is a protocol-dependent decision which one is really
-	used. Specifying passwords does not mean that authentication is enabled,
+	<tag><label id="dsc-pass">password "<m/password/" [ { <m>password options</m> } ]</tag>
+	Specifies a password that can be used by the protocol as shared secret key.
+	Password option can be used more times to specify more passwords.
+	If more passwords are specified, it is a protocol-dependent decision which one is really used.
+	Specifying passwords does not mean that authentication is enabled,
 	authentication can be enabled by separate, protocol-dependent
 	<cf/authentication/ option.
 
@@ -675,11 +675,26 @@ agreement").
 	<tag>generate to "<m/time/"</tag>
 	The last time of the usage of the password for packet signing.
 
+	<tag>generate from "<m/time/" to "<m/time/"</tag>
+	The combination of start time and the last time of the usage
+	of the password for packet signing.
+
 	<tag>accept from "<m/time/"</tag>
 	The start time of the usage of the password for packet verification.
 
 	<tag>accept to "<m/time/"</tag>
 	The last time of the usage of the password for packet verification.
+
+	<tag>accept from "<m/time/" to "<m/time/"</tag>
+	The combination of start time and the last time of the usage
+	of the password for packet verification.
+
+	<tag>algorithm keyed md5 | hmac sha1 | hmac sha256 | hmac sha384 | hmac sha512 </tag>
+	Set cryptographic authentication type for the password.
+	Default setting of algorithm depends on a protocol.
+	Default for RIP and OSPFv2 is Keyed-MD5, for OSPFv3 protocol is default
+	HMAC-SHA-256.
+
 </descrip>
 
 <chapt>Remote control
@@ -2423,14 +2438,17 @@ protocol ospf &lt;name&gt; {
 			ttl security [&lt;switch&gt;; | tx only]
 			tx class|dscp &lt;num&gt;;
 			tx priority &lt;num&gt;;
-			authentication [none|simple|cryptographic];
+			authentication none|simple|cryptographic;
 			password "&lt;text&gt;";
 			password "&lt;text&gt;" {
 				id &lt;num&gt;;
 				generate from "&lt;date&gt;";
 				generate to "&lt;date&gt;";
+				generate from "&lt;date&gt;" to "&lt;date&gt;";
 				accept from "&lt;date&gt;";
 				accept to "&lt;date&gt;";
+				accept from "&lt;date&gt;" to "&lt;date&gt;";
+				algorithm keyed md5 | hmac sha1 | hmac sha256 | hmac sha384 | hmac sha512;
 			};
 			neighbors {
 				&lt;ip&gt;;
@@ -2443,8 +2461,18 @@ protocol ospf &lt;name&gt; {
 			wait &lt;num&gt;;
 			dead count &lt;num&gt;;
 			dead &lt;num&gt;;
-			authentication [none|simple|cryptographic];
+			authentication none|simple|cryptographic;
 			password "&lt;text&gt;";
+			password "&lt;text&gt;" {
+				id &lt;num&gt;;
+				generate from "&lt;date&gt;";
+				generate to "&lt;date&gt;";
+				generate from "&lt;date&gt;" to "&lt;date&gt;";
+				accept from "&lt;date&gt;";
+				accept to "&lt;date&gt;";
+				accept from "&lt;date&gt;" to "&lt;date&gt;";
+				algorithm keyed md5 | hmac sha1 | hmac sha256 | hmac sha384 | hmac sha512;
+			};
 		};
 	};
 }
@@ -2766,17 +2794,18 @@ protocol ospf &lt;name&gt; {
 	<tag>authentication simple</tag>
 	Every packet carries 8 bytes of password. Received packets lacking this
 	password are ignored. This authentication mechanism is very weak.
+	This option is disallowed in OSPFv3.
 
 	<tag>authentication cryptographic</tag>
-	16-byte long MD5 digest is appended to every packet. For the digest
-	generation 16-byte long passwords are used. Those passwords are not sent
-	via network, so this mechanism is quite secure. Packets can still be
-	read by an attacker.
+	A digest is appended to every packet.
+	The cryptographic hash function is selected by option <cf/algorithm/ at password.
+	Those passwords are not sent via network, so this mechanism is quite secure.
+	Packets can still be read by an attacker.
 
 	<tag>password "<M>text</M>"</tag>
-	An 8-byte or 16-byte password used for authentication. See
-	<ref id="dsc-pass" name="password"> common option for detailed
-	description.
+	Used for authentication. See <ref id="dsc-pass" name="password"> common option for detailed description.
+	If <cf/authentication/ is selected <cf/cryptographic/
+	then the default <cf/algorithm/ for OSPFv2 is Keyed-MD5 and for OSPFv3 HMAC-SHA-256.
 
 	<tag>neighbors { <m/set/ } </tag>
 	A set of neighbors to which Hello messages on NBMA or PtMP networks are
@@ -2834,11 +2863,13 @@ protocol ospf MyOSPF {
 				id 1;
 				generate to "22-04-2003 11:00:06";
 				accept from "17-01-2001 12:01:05";
+				algorithm hmac sha384;
 			};
 			password "def" {
 				id 2;
 				generate to "22-07-2005 17:03:21";
 				accept from "22-02-2001 11:34:06";
+				algorithm hmac sha512;
 			};
 		};
 		interface "arc0" {
@@ -3301,8 +3332,11 @@ protocol rip [&lt;name&gt;] {
 			id &lt;num&gt;;
 			generate from "&lt;date&gt;";
 			generate to "&lt;date&gt;";
+			generate from "&lt;date&gt;" to "&lt;date&gt;";
 			accept from "&lt;date&gt;";
 			accept to "&lt;date&gt;";
+			accept from "&lt;date&gt;" to "&lt;date&gt;";
+			algorithm keyed md5 | hmac sha1 | hmac sha256 | hmac sha384 | hmac sha512;
 		};
 	};
 }
@@ -3411,13 +3445,14 @@ protocol rip [&lt;name&gt;] {
 	Selects authentication method to be used. <cf/none/ means that packets
 	are not authenticated at all, <cf/plaintext/ means that a plaintext
 	password is embedded into each packet, and <cf/cryptographic/ means that
-	packets are authenticated using a MD5 cryptographic hash. If you set
-	authentication to not-none, it is a good idea to add <cf>password</cf>
-	section. Default: none.
+	packets are authenticated using some cryptographic hash function selected by <cf/algorithm/ at <cf/password/.
+	If you set authentication to not-none, it is a good idea to add <cf>password</cf> section.
+	Default: none.
 
 	<tag>password "<m/text/"</tag>
 	Specifies a password used for authentication. See <ref id="dsc-pass"
 	name="password"> common option for detailed description.
+	If <cf/authentication/ is <cf/cryptographic/ then the default <cf/algorithm/ for RIP is Keyed-MD5.
 
 	<tag>ttl security [<m/switch/ | tx only]</tag>
 	TTL security is a feature that protects routing protocols from remote
@@ -3456,8 +3491,8 @@ protocol rip [&lt;name&gt;] {
 	consideration. When the link disappears (e.g. an ethernet cable is
 	unplugged), neighbors are immediately considered unreachable and all
 	routes received from them are withdrawn. It is possible that some
-	hardware drivers or platforms do not implement this feature. Default:
-	no.
+	hardware drivers or platforms do not implement this feature.
+	Default: no.
 </descrip>
 
 <sect1>Attributes
@@ -3487,8 +3522,9 @@ protocol rip {
         period 12;
         garbage time 60;
         interface "eth0" { metric 3; mode multicast; };
-	interface "eth*" { metric 2; mode broadcast; };
-        authentication none;
+        interface "eth*" { metric 2; mode broadcast; };
+        authentication cryptographic;
+        password "secret-shared-key" { algorithm hmac sha256; };
         import filter { print "importing"; accept; };
         export filter { print "exporting"; accept; };
 }
