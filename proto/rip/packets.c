@@ -21,8 +21,7 @@
 
 #define RIP_BLOCK_LENGTH	20
 
-#define RIP_PASSWD_LENGTH	16
-#define RIP_MD5_LENGTH		16
+#define RIP_PLAIN_PASSWD_LENGTH	16
 
 #define RIP_AF_IPV4		2
 #define RIP_AF_AUTH		0xffff
@@ -214,7 +213,7 @@ rip_fill_authentication(struct rip_proto *p, struct rip_iface *ifa, struct rip_p
   case RIP_AUTH_PLAIN:
     auth->must_be_ffff = htons(0xffff);
     auth->auth_type = htons(RIP_AUTH_PLAIN);
-    strncpy(auth->password, pass->password, RIP_PASSWD_LENGTH);
+    strncpy(auth->password, pass->password, RIP_PLAIN_PASSWD_LENGTH);
     return;
 
   case RIP_AUTH_CRYPTO:
@@ -276,7 +275,7 @@ rip_check_authentication(struct rip_proto *p, struct rip_iface *ifa, struct rip_
     return 1;
 
   case RIP_AUTH_PLAIN:
-    pass = password_find_by_value(ifa->cf->passwords, auth->password, RIP_PASSWD_LENGTH);
+    pass = password_find_by_value(ifa->cf->passwords, auth->password, RIP_PLAIN_PASSWD_LENGTH);
     if (!pass)
       DROP1("wrong password");
 
@@ -287,13 +286,14 @@ rip_check_authentication(struct rip_proto *p, struct rip_iface *ifa, struct rip_
     if (!pass)
       DROP("no suitable password found", auth->key_id);
 
+    uint hash_len = crypto_get_hash_length(pass->crypto_type);
     uint data_len = ntohs(auth->packet_len);
-    uint auth_len = sizeof(struct rip_auth_tail) + RIP_MD5_LENGTH;
+    uint auth_len = sizeof(struct rip_auth_tail) + hash_len;
 
     if (data_len + auth_len != *plen)
       DROP("packet length mismatch", data_len);
 
-    if ((auth->auth_len != RIP_MD5_LENGTH) && (auth->auth_len != auth_len))
+    if ((auth->auth_len != hash_len) && (auth->auth_len != auth_len))
       DROP("authentication data length mismatch", auth->auth_len);
 
     struct rip_auth_tail *tail = (void *) ((byte *) pkt + data_len);
@@ -316,8 +316,8 @@ rip_check_authentication(struct rip_proto *p, struct rip_iface *ifa, struct rip_
     byte *expected = crypto(&c, pass->crypto_type, pass->password, pass->password_len, (byte *) pkt, data_len + sizeof(struct rip_auth_tail));
     byte *received = tail->auth_data;
 
-    if (memcmp(received, expected, crypto_get_hash_length(pass->crypto_type)))
-      DROP("wrong MD5 digest", pass->id);
+    if (memcmp(received, expected, hash_len))
+      DROP("wrong digest", pass->id);
 
     *plen = data_len;
     n->csn = rcv_csn;
