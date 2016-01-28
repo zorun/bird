@@ -116,10 +116,10 @@ ospf_check_defcost(int cost)
 }
 
 static inline void
-ospf_check_auth(void)
+ospf_check_simple_auth(void)
 {
   if (ospf_cfg_is_v3())
-    cf_error("Authentication not supported in OSPFv3");
+    cf_error("Simple authentication is not supported in OSPFv3");
 }
 
 
@@ -262,9 +262,9 @@ ospf_vlink_item:
  | DEAD expr { OSPF_PATT->deadint = $2 ; if ($2<=1) cf_error("Dead interval must be greater than one"); }
  | DEAD COUNT expr { OSPF_PATT->deadc = $3 ; if ($3<=1) cf_error("Dead count must be greater than one"); }
  | AUTHENTICATION NONE { OSPF_PATT->autype = OSPF_AUTH_NONE;  }
- | AUTHENTICATION SIMPLE { OSPF_PATT->autype = OSPF_AUTH_SIMPLE; ospf_check_auth(); }
- | AUTHENTICATION CRYPTOGRAPHIC { OSPF_PATT->autype = OSPF_AUTH_CRYPT; ospf_check_auth(); }
- | password_list { ospf_check_auth(); }
+ | AUTHENTICATION SIMPLE { OSPF_PATT->autype = OSPF_AUTH_SIMPLE; ospf_check_simple_auth(); }
+ | AUTHENTICATION CRYPTOGRAPHIC { OSPF_PATT->autype = OSPF_AUTH_CRYPT; }
+ | password_list
  ;
 
 ospf_vlink_start: VIRTUAL LINK idval
@@ -313,8 +313,8 @@ ospf_iface_item:
  | LINK LSA SUPPRESSION bool { OSPF_PATT->link_lsa_suppression = $4; if (!ospf_cfg_is_v3()) cf_error("Link LSA suppression option requires OSPFv3"); }
  | NEIGHBORS '{' nbma_list '}'
  | AUTHENTICATION NONE { OSPF_PATT->autype = OSPF_AUTH_NONE; }
- | AUTHENTICATION SIMPLE { OSPF_PATT->autype = OSPF_AUTH_SIMPLE; ospf_check_auth(); }
- | AUTHENTICATION CRYPTOGRAPHIC { OSPF_PATT->autype = OSPF_AUTH_CRYPT; ospf_check_auth(); }
+ | AUTHENTICATION SIMPLE { OSPF_PATT->autype = OSPF_AUTH_SIMPLE; ospf_check_simple_auth(); }
+ | AUTHENTICATION CRYPTOGRAPHIC { OSPF_PATT->autype = OSPF_AUTH_CRYPT; }
  | RX BUFFER NORMAL { OSPF_PATT->rx_buffer = 0; }
  | RX BUFFER LARGE { OSPF_PATT->rx_buffer = OSPF_MAX_PKT_SIZE; }
  | RX BUFFER expr { OSPF_PATT->rx_buffer = $3; if (($3 < OSPF_MIN_PKT_SIZE) || ($3 > OSPF_MAX_PKT_SIZE)) cf_error("Buffer size must be in range 256-65535"); }
@@ -324,7 +324,7 @@ ospf_iface_item:
  | TTL SECURITY bool { OSPF_PATT->ttl_security = $3; }
  | TTL SECURITY TX ONLY { OSPF_PATT->ttl_security = 2; }
  | BFD bool { OSPF_PATT->bfd = $2; cf_check_bfd($2); }
- | password_list { ospf_check_auth(); }
+ | password_list
  ;
 
 pref_list:

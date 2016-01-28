@@ -44,7 +44,6 @@ ospf_pkt_maxsize(struct ospf_proto *p, struct ospf_iface *ifa)
 }
 
 /*
- * We assume OSPFv2 in ospf_pkt_finalize()
  * Return an extra packet size that should be added to a final packet size
  */
 static uint
@@ -471,8 +470,7 @@ ospf_send_to(struct ospf_iface *ifa, ip_addr dst)
   struct ospf_packet *pkt = (struct ospf_packet *) sk->tbuf;
   int plen = ntohs(pkt->length);
 
-  if (ospf_is_v2(ifa->oa->po))
-    plen += ospf_pkt_finalize(ifa, pkt);
+  plen += ospf_pkt_finalize(ifa, pkt);
 
   int done = sk_send_to(sk, plen, dst, 0);
   if (!done)
