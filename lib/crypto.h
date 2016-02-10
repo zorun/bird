@@ -14,6 +14,7 @@
 #include "lib/sha1.h"
 #include "lib/sha256.h"
 #include "lib/sha512.h"
+#include "lib/password.h"
 
 #define CRYPTO_ALG_NONE		0
 #define CRYPTO_ALG_MD5		1
@@ -45,7 +46,8 @@ union crypto_context {
   struct sha512_hmac_context hmac_sha512;
 };
 
-byte *crypto(union crypto_context *ctx, int type, const byte *key, uint keylen, const byte *data, uint size);
+byte *crypto(union crypto_context *ctx, const struct password_item *pass, const byte *data, uint size);
+int is_crypto_digest_valid(union crypto_context *ctx, const struct password_item *pass, const byte *data, uint size, const byte *investigate_digest);
 uint crypto_get_hash_length(int type);
 const char *crypto_get_alg_name(int type);
 

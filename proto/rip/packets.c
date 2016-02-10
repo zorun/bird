@@ -240,7 +240,7 @@ rip_fill_authentication(struct rip_proto *p, struct rip_iface *ifa, struct rip_p
     tail->must_be_0001 = htons(0x0001);
 
     union crypto_context ctx;
-    byte *hash = crypto(&ctx, pass->crypto_type, pass->password, strlen(pass->password), (const byte *) pkt, *plen + sizeof(struct rip_auth_tail));
+    byte *hash = crypto(&ctx, pass, (const byte *) pkt, *plen + sizeof(struct rip_auth_tail));
 
     memcpy(tail->auth_data, hash, crypto_get_hash_length(pass->crypto_type));
 
@@ -313,10 +313,8 @@ rip_check_authentication(struct rip_proto *p, struct rip_iface *ifa, struct rip_
     }
 
     union crypto_context c;
-    byte *expected = crypto(&c, pass->crypto_type, pass->password, pass->password_len, (byte *) pkt, data_len + sizeof(struct rip_auth_tail));
     byte *received = tail->auth_data;
-
-    if (memcmp(received, expected, hash_len))
+    if (!is_crypto_digest_valid(&c, pass, (byte *) pkt, data_len + sizeof(struct rip_auth_tail), received))
       DROP("wrong digest", pass->id);
 
     *plen = data_len;

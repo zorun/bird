@@ -109,7 +109,7 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
 
     void *tail = ((void *) pkt) + plen;
     union crypto_context c;
-    byte *hash = crypto(&c, passwd->crypto_type, passwd->password, passwd->password_len, (const byte *) pkt, plen);
+    byte *hash = crypto(&c, passwd, (const byte *) pkt, plen);
     memcpy((byte *) tail, hash, auth->field.len);
     return auth->field.len;
 
@@ -175,12 +175,9 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
     if (plen + crypt_size > len)
       DROP("length mismatch", len);
 
-    byte *tail = ((byte *) pkt) + plen;
-
     union crypto_context ctx;
-    byte *expected = crypto(&ctx, pass->crypto_type, pass->password, pass->password_len, (const byte *) pkt, plen);
-    byte *received = tail;
-    if (memcmp(received, expected, crypt_size))
+    byte *received = ((byte *) pkt) + plen;
+    if (!is_crypto_digest_valid(&ctx, pass, (const byte *) pkt, plen, received))
       DROP("wrong cryptographic digest", pass->id);
 
     if (n)
