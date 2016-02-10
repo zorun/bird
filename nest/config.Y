@@ -10,7 +10,7 @@
 CF_HDR
 
 #include "nest/rt-dev.h"
-#include "nest/password.h"
+#include "lib/password.h"
 #include "nest/cmds.h"
 #include "lib/lists.h"
 #include "lib/crypto.h"

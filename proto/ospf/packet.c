@@ -9,7 +9,7 @@
  */
 
 #include "ospf.h"
-#include "nest/password.h"
+#include "lib/password.h"
 #include "lib/md5.h"
 #include "lib/socket.h"
 

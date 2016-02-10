@@ -17,7 +17,7 @@
 #include "nest/iface.h"
 #include "nest/protocol.h"
 #include "nest/route.h"
-#include "nest/password.h"
+#include "lib/password.h"
 #include "nest/locks.h"
 #include "nest/bfd.h"
 #include "lib/lists.h"
