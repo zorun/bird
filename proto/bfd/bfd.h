@@ -179,8 +179,8 @@ extern const char *bfd_state_names[];
 #define BFD_FLAGS		0x3f
 #define BFD_FLAG_POLL		(1 << 5)
 #define BFD_FLAG_FINAL		(1 << 4)
-#define BFD_FLAG_CPI		(1 << 3)
-#define BFD_FLAG_AP		(1 << 2)
+#define BFD_FLAG_CPI		(1 << 3) /* Control Plane Independent */
+#define BFD_FLAG_AP		(1 << 2) /* Authentication Present */
 #define BFD_FLAG_DEMAND		(1 << 1)
 #define BFD_FLAG_MULTIPOINT	(1 << 0)
 

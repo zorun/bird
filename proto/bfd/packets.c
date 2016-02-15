@@ -393,7 +393,7 @@ bfd_rx_hook(sock *sk, int len)
   bfd_session_process_ctl(s, pkt->flags, old_tx_int, old_rx_int);
   return 1;
 
- drop:
+drop:
   log(L_REMOTE "%s: Bad packet from %I - %s (%u)", p->p.name, sk->faddr, err_dsc, err_val);
   return 1;
 }
