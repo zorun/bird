@@ -1451,6 +1451,16 @@ protocol bfd [&lt;name&gt;] {
 		idle tx interval &lt;time&gt;;
 		multiplier &lt;num&gt;;
 		passive &lt;switch&gt;;
+		authentication simple;
+		authentication [meticulous] keyed md5|sha1;
+		password "&lt;text&gt;";
+		password "&lt;text&gt;" {
+			id &lt;num&gt;;
+			generate from "&lt;date&gt;";
+			generate to "&lt;date&gt;";
+			accept from "&lt;date&gt;";
+			accept to "&lt;date&gt;";
+		};
 	};
 	multihop {
 		interval &lt;time&gt;;
@@ -1534,6 +1544,28 @@ protocol bfd [&lt;name&gt;] {
 	sending control packets to the other side. This option allows to enable
 	passive mode, which means that the router does not send BFD packets
 	until it has received one from the other side. Default: disabled.
+
+	<tag>authentication none</tag>
+	No passwords are sent in BFD packets. This is the default value.
+
+	<tag>authentication simple</tag>
+	Every packet carries 16 bytes of password. Received packets lacking this
+	password are ignored. This authentication mechanism is very weak.
+
+	<tag>authentication [meticulous] keyed md5|sha1</tag>
+	Selects authentication method to be used.
+
+	The <cf/meticulous/ option forces an increasing of sequence number
+	in authentication section each time. Without <cf/meticulous/ option
+	are the sequence numbers increased no more than once per second.
+
+	<tag>password "<M>text</M>"</tag>
+	Used for authentication.
+	See <ref id="dsc-pass" name="password"> common option for detailed
+	description except for an option <cf/algorithm/ that is forbidden in BFD
+	protocol. The algorithm is selected using <cf/authentication/ option
+	above.
+
 </descrip>
 
 <sect1>Example

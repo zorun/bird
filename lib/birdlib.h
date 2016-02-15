@@ -23,6 +23,9 @@
 #define MIN_(a,b) (((a)<(b))?(a):(b))
 #define MAX_(a,b) (((a)>(b))?(a):(b))
 
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
 #ifndef PARSER
 #undef MIN
 #undef MAX

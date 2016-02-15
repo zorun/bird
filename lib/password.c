@@ -65,4 +65,3 @@ password_find_by_value(list *l, char *pass, uint size)
 
   return NULL;
 }
-

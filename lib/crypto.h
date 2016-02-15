@@ -16,7 +16,7 @@
 #include "lib/sha512.h"
 #include "lib/password.h"
 
-#define CRYPTO_ALG_NONE		0
+#define CRYPTO_ALG_UNDEFINED	0
 #define CRYPTO_ALG_MD5		1
 #define CRYPTO_ALG_SHA1		2
 #define CRYPTO_ALG_SHA224	3

@@ -52,6 +52,14 @@ struct bfd_iface_config
   u32 idle_tx_int;
   u8 multiplier;
   u8 passive;
+  u8 auth_type;			/* Authentication type (BFD_AUTH_*) */
+#define BFD_AUTH_NONE			0 /* RFC 5880: Reserved */
+#define BFD_AUTH_SIMPLE			1 /* RFC 5880: Simple Password */
+#define BFD_AUTH_KEYED_MD5		2 /* RFC 5880: Keyed MD5 */
+#define BFD_AUTH_METICULOUS_KEYED_MD5	3 /* RFC 5880: Meticulous Keyed MD5 */
+#define BFD_AUTH_KEYED_SHA1		4 /* RFC 5880: Keyed SHA1 */
+#define BFD_AUTH_METICULOUS_KEYED_SHA1	5 /* RFC 5880: Meticulous Keyed SHA1 */
+  list *passwords;		/* Passwords for authentication */
 };
 
 struct bfd_neighbor
@@ -129,6 +137,8 @@ struct bfd_session
   u32 req_min_rx_new;			/* Used for req_min_rx_int change */
   u32 rem_min_tx_int;			/* Last received des_min_tx_int */
   u32 rem_min_rx_int;			/* Last received req_min_rx_int */
+  u32 last_rx_csn;			/* Last received Cryptographic Sequence Number (CSN) */
+  u32 last_tx_csn;			/* Last transmitted Cryptographic Sequence Number (CSN) */
   u8 demand_mode;			/* Currently unused */
   u8 rem_demand_mode;
   u8 detect_mult;			/* Announced detect_mult, local option */
@@ -183,6 +193,7 @@ struct bfd_session * bfd_find_session_by_id(struct bfd_proto *p, u32 id);
 struct bfd_session * bfd_find_session_by_addr(struct bfd_proto *p, ip_addr addr);
 void bfd_session_process_ctl(struct bfd_session *s, u8 flags, u32 old_tx_int, u32 old_rx_int);
 void bfd_show_sessions(struct proto *P);
+u8 bfd_auth_to_crypto_alg(u8 bfd_auth_type);
 
 /* packets.c */
 void bfd_send_ctl(struct bfd_proto *p, struct bfd_session *s, int final);

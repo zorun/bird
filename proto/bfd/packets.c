@@ -6,6 +6,7 @@
 
 #include "bfd.h"
 
+#include "lib/crypto.h"
 
 struct bfd_ctl_packet
 {
@@ -18,6 +19,32 @@ struct bfd_ctl_packet
   u32 des_min_tx_int;
   u32 req_min_rx_int;
   u32 req_min_echo_rx_int;
+};
+
+#define BFD_MAX_PASS_LEN_SIMPLE_AUTH 16
+#define BFD_MIN_PASS_LEN_SIMPLE_AUTH 1
+
+struct bfd_simple_auth_packet_section
+{
+  u8 type;			/* BFD_AUTH_SIMPLE */
+  u8 length;			/* The length of password + BFD_AUTH_SIMPLE_HEADER_LEN */
+#define BFD_AUTH_SIMPLE_HEADER_LEN 3
+#define BFD_AUTH_SIMPLE_MAX_LEN	(BFD_AUTH_SIMPLE_HEADER_LEN + BFD_MAX_PASS_LEN_SIMPLE_AUTH)
+#define BFD_AUTH_SIMPLE_MIN_LEN (BFD_AUTH_SIMPLE_HEADER_LEN + BFD_MIN_PASS_LEN_SIMPLE_AUTH)
+  u8 key_id;			/* This allows multiple keys to be active simultaneously */
+  byte password[BFD_MAX_PASS_LEN_SIMPLE_AUTH];	/* The password is a binary string, and MUST be from 1 to 16 bytes in length.*/
+};
+
+struct bfd_crypt_auth_packet_section
+{
+  u8 type;			/* BFD_AUTH_KEYED_* or BFD_AUTH_METICULOUS_* */
+  u8 length;			/* The length of the authentication section including the Type, Len, KeyID fields */
+#define BFD_AUTH_LEN_MD5	24
+#define BFD_AUTH_LEN_SHA1 	28
+  u8 key_id;			/* This allows multiple keys to be active simultaneously */
+  u8 must_be_zero;		/* MUST be set to zero on transmit and ignored on receipt */
+  u32 csn;			/* Cryptographic Sequence Number (CSN): provides protection against replay attack */
+  byte digest[SHA1_SIZE];	/* Auth Key/Hash, 20 for SHA1, 16 for MD5 */
 };
 
 #define BFD_BASE_LEN	sizeof(struct bfd_ctl_packet)
@@ -59,6 +86,102 @@ bfd_format_flags(u8 flags, char *buf)
   return buf;
 }
 
+static const u8 bfd_auth_to_crypto_alg_table[] = {
+    [BFD_AUTH_NONE] = 			CRYPTO_ALG_UNDEFINED,
+    [BFD_AUTH_SIMPLE] = 		CRYPTO_ALG_UNDEFINED,
+    [BFD_AUTH_KEYED_MD5] = 		CRYPTO_ALG_MD5,
+    [BFD_AUTH_METICULOUS_KEYED_MD5] = 	CRYPTO_ALG_MD5,
+    [BFD_AUTH_KEYED_SHA1] = 		CRYPTO_ALG_SHA1,
+    [BFD_AUTH_METICULOUS_KEYED_SHA1] = 	CRYPTO_ALG_SHA1,
+};
+
+u8
+bfd_auth_to_crypto_alg(u8 bfd_auth_type)
+{
+  return bfd_auth_to_crypto_alg_table[bfd_auth_type];
+}
+
+static inline void
+bfd_update_tx_csn(struct bfd_session *s)
+{
+  /* We are using real time, but enforcing monotonicity. */
+  s->last_tx_csn = (s->last_tx_csn < (u32) now_real) ? (u32) now_real : s->last_tx_csn + 1;
+}
+
+/* Fill authentication section and modifies final length in control section packet */
+static void
+bfd_fill_authentication_section(const struct bfd_proto *p, struct bfd_session *s, struct bfd_ctl_packet *pkt)
+{
+  void *pkt_auth_section = (byte *) pkt + BFD_BASE_LEN;
+
+  struct password_item *pass = password_find(s->ifa->cf->passwords, 0);
+
+  if (!pass)
+  {
+    /* FIXME: This should not happen */
+    log(L_ERR "%s: No suitable password found for authentication", p->p.name);
+    return;
+  }
+
+  u8 bfd_auth_type = s->ifa->cf->auth_type;
+
+  switch (bfd_auth_type)
+  {
+  case BFD_AUTH_SIMPLE:
+  {
+    struct bfd_simple_auth_packet_section *simple_auth = pkt_auth_section;
+
+    uint final_pass_len = MIN(pass->password_len, BFD_MAX_PASS_LEN_SIMPLE_AUTH);
+    simple_auth->length = BFD_AUTH_SIMPLE_HEADER_LEN + final_pass_len;
+    simple_auth->type = BFD_AUTH_SIMPLE;
+    simple_auth->key_id = pass->id;
+    strncpy(simple_auth->password, pass->password, final_pass_len);
+
+    pkt->length += simple_auth->length;
+    break;
+  }
+
+  case BFD_AUTH_METICULOUS_KEYED_MD5:
+  case BFD_AUTH_METICULOUS_KEYED_SHA1:
+    bfd_update_tx_csn(s);
+    /* fall through */
+
+  case BFD_AUTH_KEYED_MD5:
+  case BFD_AUTH_KEYED_SHA1:
+  {
+    if (s->last_tx_csn < (u32)now_real)
+      bfd_update_tx_csn(s);
+
+    DBG("[%I] CSN: %u\n", s->addr, s->last_tx_csn);
+
+    int crypto_type = bfd_auth_to_crypto_alg_table[bfd_auth_type];
+    ASSERT(crypto_type == pass->crypto_type);
+
+    union crypto_context ctx;
+    struct bfd_crypt_auth_packet_section *crypt_auth = pkt_auth_section;
+
+    crypt_auth->type = bfd_auth_type;
+    crypt_auth->key_id = pass->id;
+    crypt_auth->must_be_zero = 0;
+
+    crypt_auth->csn = htonl(s->last_tx_csn);
+
+    if (bfd_auth_type == BFD_AUTH_KEYED_MD5  || bfd_auth_type == BFD_AUTH_METICULOUS_KEYED_MD5)
+      crypt_auth->length = BFD_AUTH_LEN_MD5;
+    else if (bfd_auth_type == BFD_AUTH_KEYED_SHA1 || bfd_auth_type == BFD_AUTH_METICULOUS_KEYED_SHA1)
+      crypt_auth->length = BFD_AUTH_LEN_SHA1;
+    else
+      bug("password key type mismatch");
+
+    pkt->length += crypt_auth->length;
+
+    byte *hash = crypto(&ctx, pass, (const byte *) pkt, BFD_BASE_LEN);
+    memcpy(crypt_auth->digest, hash, crypto_get_hash_length(pass->crypto_type));
+    break;
+  }
+  }
+}
+
 void
 bfd_send_ctl(struct bfd_proto *p, struct bfd_session *s, int final)
 {
@@ -85,6 +208,12 @@ bfd_send_ctl(struct bfd_proto *p, struct bfd_session *s, int final)
   else if (s->poll_active)
     pkt->flags |= BFD_FLAG_POLL;
 
+  if (s->ifa->cf->auth_type != BFD_AUTH_NONE)
+  {
+    pkt->flags |= BFD_FLAG_AP;
+    bfd_fill_authentication_section(p, s, pkt);
+  }
+
   if (sk->tbuf != sk->tpos)
     log(L_WARN "%s: Old packet overwritten in TX buffer", p->p.name);
 
@@ -94,7 +223,92 @@ bfd_send_ctl(struct bfd_proto *p, struct bfd_session *s, int final)
   sk_send_to(sk, pkt->length, s->addr, sk->dport);
 }
 
+static const char *auth_method_str[] = {
+    [BFD_AUTH_SIMPLE] = "SIMPLE PASSWORD",
+    [BFD_AUTH_KEYED_MD5] = "KEYED MD5",
+    [BFD_AUTH_KEYED_SHA1] = "KEYED SHA1",
+    [BFD_AUTH_METICULOUS_KEYED_MD5] = "METICULOUS KEYED MD5",
+    [BFD_AUTH_METICULOUS_KEYED_SHA1] = "METICULOUS KEYED SHA1",
+};
+
 #define DROP(DSC,VAL) do { err_dsc = DSC; err_val = VAL; goto drop; } while(0)
+
+#define AUTH_ERR_MSG_MAX_LEN 100
+#define FMT_DROP(bfd, session, method, format, ...) 				\
+  do {  									\
+    log(L_REMOTE "%s: Bad %s authentication section in packet from %I - " 	\
+	format, (bfd)->p.name, auth_method_str[method], (session)->addr,  ##__VA_ARGS__); \
+    return 0;									\
+  } while(0);
+
+/*
+ * Return 1 if authentication is valid
+ * Return 0 if authentication failed
+ */
+static int
+is_authentication_valid(const struct bfd_proto *p, struct bfd_session *s, const byte *pkt)
+{
+  const void *auth_section = pkt + BFD_BASE_LEN;
+  const struct bfd_simple_auth_packet_section *simple_auth = auth_section;
+  const struct bfd_crypt_auth_packet_section *crypt_auth = auth_section;
+  const struct password_item *cfg_pass = NULL;
+
+  u8 pkt_auth_type = simple_auth->type; /* Auth Type is common for simple even for cryptographic authentication */
+  u8 cfg_auth_type = s->ifa->cf->auth_type;
+  if (pkt_auth_type != cfg_auth_type)
+    FMT_DROP(p, s, pkt_auth_type,
+	     "authentication method mismatch, got %s, expected %s ",
+	     auth_method_str[pkt_auth_type], auth_method_str[cfg_auth_type]);
+
+  union crypto_context ctx;
+
+  cfg_pass = password_find_by_id(s->ifa->cf->passwords, simple_auth->key_id);
+  if (!cfg_pass)
+    FMT_DROP(p, s, pkt_auth_type, "There is no password with id %u", simple_auth->key_id);
+
+  switch (pkt_auth_type)
+  {
+  case BFD_AUTH_SIMPLE:
+    if (simple_auth->length < BFD_AUTH_SIMPLE_MIN_LEN || simple_auth->length > BFD_AUTH_SIMPLE_MAX_LEN)
+      FMT_DROP(p, s, pkt_auth_type, "bad size, got %d bytes, expected in the range of " STR(BFD_AUTH_SIMPLE_MIN_LEN) " and " STR(BFD_AUTH_SIMPLE_MAX_LEN) " bytes", simple_auth->length);
+
+    char buf[BFD_MAX_PASS_LEN_SIMPLE_AUTH + 1];
+    bzero(buf, sizeof(buf));
+    uint pkt_pass_len = MIN(BFD_MAX_PASS_LEN_SIMPLE_AUTH, simple_auth->length - BFD_AUTH_SIMPLE_HEADER_LEN);
+    bsnprintf(buf, pkt_pass_len, "%s", simple_auth->password);
+    uint cfg_pass_len = MIN(cfg_pass->password_len, BFD_MAX_PASS_LEN_SIMPLE_AUTH);
+    if (memcmp(buf, cfg_pass->password, cfg_pass_len))
+      FMT_DROP(p, s, pkt_auth_type, "wrong password, got: %s, expected: %s", simple_auth->password, cfg_pass->password);
+    break;
+
+  case BFD_AUTH_METICULOUS_KEYED_MD5:
+  case BFD_AUTH_METICULOUS_KEYED_SHA1:
+  {
+    u32 seq = ntohl(crypt_auth->csn);
+    if (seq > s->last_rx_csn || (seq == 0 && s->last_rx_csn == 0))
+      s->last_rx_csn = seq;
+    else
+      FMT_DROP(p, s, pkt_auth_type, "bad sequence number %u, expected was >%u", seq, s->last_rx_csn);
+  } /* Fall through */
+
+  case BFD_AUTH_KEYED_MD5:
+  case BFD_AUTH_KEYED_SHA1:
+  {
+    u32 seq = ntohl(crypt_auth->csn);
+    if (seq >= s->last_rx_csn)
+      s->last_rx_csn = seq;
+    else
+      FMT_DROP(p, s, pkt_auth_type, "bad sequence number %u, expected was >=%u", seq, s->last_rx_csn);
+
+    if (!is_crypto_digest_valid(&ctx, cfg_pass, pkt, BFD_BASE_LEN, crypt_auth->digest))
+    {
+      FMT_DROP(p, s, pkt_auth_type, "wrong cryptographic digest", cfg_pass->id);
+    }
+  }
+  }
+
+  return 1; /* OK */
+}
 
 static int
 bfd_rx_hook(sock *sk, int len)
@@ -151,10 +365,16 @@ bfd_rx_hook(sock *sk, int len)
       return 1;
   }
 
-  /* FIXME: better authentication handling and message */
-  if (pkt->flags & BFD_FLAG_AP)
-    DROP("authentication not supported", 0);
-
+  if (s->ifa->cf->auth_type != BFD_AUTH_NONE)
+  {
+    if (pkt->flags & BFD_FLAG_AP)
+    {
+      if (!is_authentication_valid(p, s, (byte *) pkt))
+	DROP("authentication failed", 0);
+    }
+    else
+      DROP("authentication is required", 0);
+  }
 
   u32 old_tx_int = s->des_min_tx_int;
   u32 old_rx_int = s->rem_min_rx_int;
