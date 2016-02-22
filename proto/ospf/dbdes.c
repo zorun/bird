@@ -14,7 +14,7 @@
 struct ospf_dbdes2_packet
 {
   struct ospf_packet hdr;
-  union ospf_auth auth;
+  union ospf2_auth auth;
 
   u16 iface_mtu;
   u8 options;
@@ -129,7 +129,7 @@ ospf_prepare_dbdes(struct ospf_proto *p, struct ospf_neighbor *n)
   else /* OSPFv3 */
   {
     struct ospf_dbdes3_packet *ps = (void *) pkt;
-    ps->options = htonl(ifa->oa->options);
+    ps->options = htonl(ifa->oa->options | (u32)(ifa->autype == OSPF_AUTH_CRYPT ? OPT_AT : 0));
     ps->iface_mtu = htons(iface_mtu);
     ps->padding = 0;
     ps->imms = 0;	/* Will be set later */
@@ -332,6 +332,9 @@ ospf_receive_dbdes(struct ospf_packet *pkt, struct ospf_iface *ifa,
     rcv_iface_mtu = ntohs(ps->iface_mtu);
     rcv_imms = ps->imms;
     rcv_ddseq = ntohl(ps->ddseq);
+
+    if (ifa->autype == OSPF_AUTH_CRYPT && !(rcv_options & OPT_AT))
+      DROP("missing authentication trailer bit in options field", 0);
   }
 
   switch (n->state)

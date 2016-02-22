@@ -255,13 +255,18 @@ ospf_vlink_opts:
  ;
 
 ospf_vlink_item:
+   /* empty */
  | HELLO expr { OSPF_PATT->helloint = $2 ; if (($2<=0) || ($2>65535)) cf_error("Hello interval must be in range 1-65535"); }
  | RETRANSMIT expr { OSPF_PATT->rxmtint = $2 ; if ($2<=1) cf_error("Retransmit int must be greater than one"); }
  | TRANSMIT DELAY expr { OSPF_PATT->inftransdelay = $3 ; if (($3<=0) || ($3>65535)) cf_error("Transmit delay must be in range 1-65535"); }
  | WAIT expr { OSPF_PATT->waitint = $2 ; if ($2<=1) cf_error("Wait interval must be greater than one"); }
  | DEAD expr { OSPF_PATT->deadint = $2 ; if ($2<=1) cf_error("Dead interval must be greater than one"); }
  | DEAD COUNT expr { OSPF_PATT->deadc = $3 ; if ($3<=1) cf_error("Dead count must be greater than one"); }
- | AUTHENTICATION NONE { OSPF_PATT->autype = OSPF_AUTH_NONE;  }
+ | ospf_authentication_opts
+ ;
+
+ospf_authentication_opts:
+   AUTHENTICATION NONE { OSPF_PATT->autype = OSPF_AUTH_NONE; }
  | AUTHENTICATION SIMPLE { OSPF_PATT->autype = OSPF_AUTH_SIMPLE; ospf_check_simple_auth(); }
  | AUTHENTICATION CRYPTOGRAPHIC { OSPF_PATT->autype = OSPF_AUTH_CRYPT; }
  | password_list
@@ -312,9 +317,6 @@ ospf_iface_item:
  | ECMP WEIGHT expr { OSPF_PATT->ecmp_weight = $3 - 1; if (($3<1) || ($3>256)) cf_error("ECMP weight must be in range 1-256"); }
  | LINK LSA SUPPRESSION bool { OSPF_PATT->link_lsa_suppression = $4; if (!ospf_cfg_is_v3()) cf_error("Link LSA suppression option requires OSPFv3"); }
  | NEIGHBORS '{' nbma_list '}'
- | AUTHENTICATION NONE { OSPF_PATT->autype = OSPF_AUTH_NONE; }
- | AUTHENTICATION SIMPLE { OSPF_PATT->autype = OSPF_AUTH_SIMPLE; ospf_check_simple_auth(); }
- | AUTHENTICATION CRYPTOGRAPHIC { OSPF_PATT->autype = OSPF_AUTH_CRYPT; }
  | RX BUFFER NORMAL { OSPF_PATT->rx_buffer = 0; }
  | RX BUFFER LARGE { OSPF_PATT->rx_buffer = OSPF_MAX_PKT_SIZE; }
  | RX BUFFER expr { OSPF_PATT->rx_buffer = $3; if (($3 < OSPF_MIN_PKT_SIZE) || ($3 > OSPF_MAX_PKT_SIZE)) cf_error("Buffer size must be in range 256-65535"); }
@@ -324,7 +326,7 @@ ospf_iface_item:
  | TTL SECURITY bool { OSPF_PATT->ttl_security = $3; }
  | TTL SECURITY TX ONLY { OSPF_PATT->ttl_security = 2; }
  | BFD bool { OSPF_PATT->bfd = $2; cf_check_bfd($2); }
- | password_list
+ | ospf_authentication_opts
  ;
 
 pref_list:

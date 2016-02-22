@@ -282,7 +282,7 @@ struct ospf_iface
 				   interface.  LSAs contained in the update */
   u16 helloint;			/* number of seconds between hello sending */
   list *passwords;
-  u32 csn;                      /* Last used crypt seq number */
+  u64 csn;                      /* Last used crypt seq number */
   bird_clock_t csn_use;         /* Last time when packet with that CSN was sent */
   ip_addr all_routers;		/* Multicast (or broadcast) address for all routers */
   ip_addr des_routers;		/* Multicast (or NULL) address for designated routers */
@@ -456,6 +456,7 @@ struct ospf_neighbor
 #define OPT_EA		0x10	/* OSPFv2, external attributes, not used and obsolete */
 #define OPT_R		0x10	/* OSPFv3, originator is active router */
 #define OPT_DC		0x20	/* Related to demand circuits, not used */
+#define OPT_AT          0x400	/* OSPFv3, authentication trailer bit */
 
 /* Router-LSA VEB flags are are stored together with links (OSPFv2) or options (OSPFv3) */
 #define OPT_RT_B	(0x01 << 24)
@@ -482,18 +483,28 @@ struct ospf_packet
   u8 autype;			/* Undefined for OSPFv3 */
 };
 
-struct ospf_auth_crypto
+struct ospf2_auth_crypto
 {
   u16 zero;
   u8 keyid;
   u8 len;
-  u32 csn;
+  u32 csn;			/* Cryptographic Sequence Number */
 };
 
-union ospf_auth
+struct ospf3_auth
+{
+  u16 type;			/* Authentication Type */
+#define OSPF3_AUTH_HMAC 1	/* HMAC Cryptographic Authentication */
+  u16 length;			/* Auth Data Length of the 16-octet fixed header and the variable-length message digest */
+  u16 reserved;
+  u16 sa_id;			/* Security Association Identifier (alternative to KeyID) */
+  u64 csn;			/* Cryptographic Sequence Number (64-bit) */
+};
+
+union ospf2_auth		/* Size must be 8 bytes for fit in packet */
 {
   u8 password[8];
-  struct ospf_auth_crypto field;
+  struct ospf2_auth_crypto crypto;
 };
 
 /* Packet types */
@@ -917,7 +928,7 @@ static inline void ospf_send_to_des(struct ospf_iface *ifa)
 #endif
 
 static inline uint ospf_pkt_hdrlen(struct ospf_proto *p)
-{ return ospf_is_v2(p) ? (sizeof(struct ospf_packet) + sizeof(union ospf_auth)) : sizeof(struct ospf_packet); }
+{ return ospf_is_v2(p) ? (sizeof(struct ospf_packet) + sizeof(union ospf2_auth)) : sizeof(struct ospf_packet); }
 
 static inline void * ospf_tx_buffer(struct ospf_iface *ifa)
 { return ifa->sk->tbuf; }

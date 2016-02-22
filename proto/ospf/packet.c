@@ -28,7 +28,7 @@ ospf_pkt_fill_hdr(struct ospf_iface *ifa, void *buf, u8 h_type)
   pkt->areaid = htonl(ifa->oa->areaid);
   pkt->checksum = 0;
   pkt->instance_id = ifa->instance_id;
-  pkt->autype = ifa->autype;
+  pkt->autype = ospf_is_v2(p) ? ifa->autype : 0;
 }
 
 uint
@@ -44,18 +44,55 @@ ospf_pkt_maxsize(struct ospf_proto *p, struct ospf_iface *ifa)
 }
 
 /*
+ * Return
+ *   pointer to the start of OSPFv2 authentication header (inside of packet) or
+ *   pointer to the start of OSPFv3 authentication header (at the end of packet)
+ */
+static void *
+ospf_get_auth_trailer(struct ospf_iface* ifa, struct ospf_packet *pkt)
+{
+  struct ospf_proto *p = ifa->oa->po;
+  uint plen = ntohs(pkt->length);
+
+  if (ospf_is_v2(p))
+    return (void *) (pkt + 1);
+  else /* OSPFv3 */
+    /* Assume we don't use OSPF Link-Local Signaling blocks (RFC 5613) */
+    return (void *) ((byte *) pkt + plen);
+}
+
+static byte *
+ospf_get_packet_tail(struct ospf_iface* ifa, struct ospf_packet *pkt)
+{
+  struct ospf_proto *p = ifa->oa->po;
+  uint plen = ntohs(pkt->length);
+
+  uint ospf3_auth_len = ifa->autype == OSPF_AUTH_CRYPT ? sizeof(struct ospf3_auth) : 0;
+
+  if (ospf_is_v2(p))
+    return ((byte *) pkt + plen);
+  else /* OSPFv3 */
+    /* Assume we don't use OSPF Link-Local Signaling blocks (RFC 5613) */
+    return ((byte *) pkt + plen + ospf3_auth_len);
+}
+
+/*
  * Return an extra packet size that should be added to a final packet size
  */
 static uint
 ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
 {
   struct password_item *passwd = NULL;
-  union ospf_auth *auth = (void *) (pkt + 1);
+  struct ospf_proto *p = ifa->oa->po;
   uint plen = ntohs(pkt->length);
+
+  void *auth = ospf_get_auth_trailer(ifa, pkt);
+  union ospf2_auth *auth2 = auth;
+  struct ospf3_auth *auth3 = auth;
+  bzero(auth, ospf_is_v2(p) ? sizeof(union ospf2_auth) : sizeof(struct ospf3_auth));
 
   pkt->checksum = 0;
   pkt->autype = ifa->autype;
-  bzero(auth, sizeof(union ospf_auth));
 
   /* Compatibility note: auth may contain anything if autype is
      none, but nonzero values do not work with Mikrotik OSPF */
@@ -63,19 +100,28 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
   switch (ifa->autype)
   {
   case OSPF_AUTH_SIMPLE:
+    if (ospf_is_v3(p))
+    {
+      log(L_ERR "Simple authentication not allowed in OSPFv3");
+      break;
+    }
+
     passwd = password_find(ifa->passwords, 1);
     if (!passwd)
     {
       log(L_ERR "No suitable password found for authentication");
       break;
     }
-    strncpy(auth->password, passwd->password, sizeof(auth->password));
+    strncpy(auth2->password, passwd->password, sizeof(auth2->password));
 
   case OSPF_AUTH_NONE:
     {
-      void *body = (void *) (auth + 1);
-      uint blen = plen - sizeof(struct ospf_packet) - sizeof(union ospf_auth);
-      pkt->checksum = ipsum_calculate(pkt, sizeof(struct ospf_packet), body, blen, NULL);
+      if (ospf_is_v2(p))
+      {
+	void *body = (void *) (auth2 + 1);
+	uint blen = plen - sizeof(struct ospf_packet) - sizeof(union ospf2_auth);
+	pkt->checksum = ipsum_calculate(pkt, sizeof(struct ospf_packet), body, blen, NULL);
+      }
     }
     break;
 
@@ -91,7 +137,7 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
        reboot when system does not have independent RTC? */
     if (!ifa->csn)
     {
-      ifa->csn = (u32) now;
+      ifa->csn = (u64) now;
       ifa->csn_use = now;
     }
 
@@ -101,17 +147,32 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
       ifa->csn++;
 
     ifa->csn_use = now;
+    uint crypto_len = crypto_get_hash_length(passwd->crypto_type);
+    uint extra_bytes;
 
-    auth->field.zero = 0;
-    auth->field.keyid = passwd->id;
-    auth->field.len = crypto_get_hash_length(passwd->crypto_type);
-    auth->field.csn = htonl(ifa->csn);
+    if (ospf_is_v2(p))
+    {
+      extra_bytes = crypto_len;
+      auth2->crypto.zero = 0;
+      auth2->crypto.keyid = passwd->id;
+      auth2->crypto.len = extra_bytes;
+      auth2->crypto.csn = htonl(ifa->csn);
+    }
+    else /* OSPFv3 */
+    {
+      extra_bytes = sizeof(struct ospf3_auth) + crypto_len;
+      auth3->type = htons(OSPF3_AUTH_HMAC);
+      auth3->length = htons(extra_bytes);
+      auth3->reserved = 0;
+      auth3->sa_id = htons((u16) passwd->id);
+      put_u64(&auth3->csn, ifa->csn);
+    }
 
-    void *tail = ((void *) pkt) + plen;
     union crypto_context c;
     byte *hash = crypto(&c, passwd, (const byte *) pkt, plen);
-    memcpy((byte *) tail, hash, auth->field.len);
-    return auth->field.len;
+    memcpy(ospf_get_packet_tail(ifa, pkt), hash, crypto_len);
+
+    return extra_bytes;
 
   default:
     bug("Unknown authentication type");
@@ -119,21 +180,29 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
   return 0;
 }
 
-/* We assume OSPFv2 in ospf_pkt_checkauth() */
 static int
 ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_packet *pkt, int len)
 {
   struct ospf_proto *p = ifa->oa->po;
-  union ospf_auth *auth = (void *) (pkt + 1);
+
+  void *auth = ospf_get_auth_trailer(ifa, pkt);
+  union ospf2_auth *auth2 = auth;
+  struct ospf3_auth *auth3 = auth;
+
   struct password_item *pass = NULL;
   const char *err_dsc = NULL;
   uint err_val = 0;
 
   uint plen = ntohs(pkt->length);
-  u8 autype = pkt->autype;
+  u8 autype = ifa->autype;
 
-  if (autype != ifa->autype)
-    DROP("authentication method mismatch", autype);
+  if (ospf_is_v2(p) && pkt->autype != autype)
+    DROP("authentication method mismatch", pkt->autype);
+
+  if (ospf_is_v3(p) && autype == OSPF_AUTH_CRYPT && ntohs(auth3->type) != OSPF3_AUTH_HMAC)
+    DROP("does not include HMAC Cryptographic Authentication type", len);
+
+  /* OSPFv3: OPT_AT flag is checked at packet specific type received function */
 
   switch (autype)
   {
@@ -141,20 +210,44 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
     return 1;
 
   case OSPF_AUTH_SIMPLE:
+    if (ospf_is_v3(p))
+      DROP1("simple authentication not allowed in OSPF3");
+
     pass = password_find(ifa->passwords, 1);
     if (!pass)
       DROP1("no password found");
 
-    if (!password_verify(pass, auth->password, sizeof(auth->password)))
+    if (!password_verify(pass, auth2->password, sizeof(auth2->password)))
       DROP("wrong password", pass->id);
 
     return 1;
 
   case OSPF_AUTH_CRYPT:
   {
-    u32 rcv_csn = ntohl(auth->field.csn);
+    u64 rcv_csn;
+    int key_id;
+    uint rcv_crypt_len;
+    uint rcv_auth_len;
+
+    if (ospf_is_v2(p))
+    {
+      rcv_csn = ntohl(auth2->crypto.csn);
+      key_id  = auth2->crypto.keyid;
+      rcv_crypt_len = auth2->crypto.len;
+      rcv_auth_len  = auth2->crypto.len;
+    }
+    else /* OSPFv3 */
+    {
+      rcv_csn = get_u64(&auth3->csn);
+      key_id  = ntohs(auth3->sa_id);
+      rcv_crypt_len = ntohs(auth3->length) - sizeof(struct ospf3_auth);
+      rcv_auth_len  = ntohs(auth3->length);
+
+      /* RFC 7166 4.2 - omitting OSPFv3 header checksum */
+      pkt->checksum = 0;
+    }
+
     if (n && (rcv_csn < n->csn))
-      // DROP("lower sequence number", rcv_csn);
     {
       /* We want to report both new and old CSN */
       LOG_PKT_AUTH("Authentication failed for nbr %R on %s - "
@@ -163,20 +256,19 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
       return 0;
     }
 
-    pass = password_find_by_id(ifa->passwords, auth->field.keyid);
+    pass = password_find_by_id(ifa->passwords, key_id);
     if (!pass)
-      DROP("no suitable password found", auth->field.keyid);
+      DROP("no suitable password found", key_id);
 
-    uint crypt_size = crypto_get_hash_length(pass->crypto_type);
+    uint expected_crypt_len = crypto_get_hash_length(pass->crypto_type);
+    if (rcv_crypt_len != expected_crypt_len)
+      DROP("invalid cryptographic digest length", rcv_crypt_len);
 
-    if (auth->field.len != crypt_size)
-      DROP("invalid cryptographic digest length", auth->field.len);
-
-    if (plen + crypt_size > len)
+    if (plen + rcv_auth_len > len)
       DROP("length mismatch", len);
 
     union crypto_context ctx;
-    byte *received = ((byte *) pkt) + plen;
+    byte *received = ospf_get_packet_tail(ifa, pkt);
     if (!is_crypto_digest_valid(&ctx, pass, (const byte *) pkt, plen, received))
       DROP("wrong cryptographic digest", pass->id);
 
@@ -298,12 +390,12 @@ ospf_rx_hook(sock *sk, int len)
 
   if (ospf_is_v2(p) && (pkt->autype != OSPF_AUTH_CRYPT))
   {
-    uint hlen = sizeof(struct ospf_packet) + sizeof(union ospf_auth);
+    uint hlen = sizeof(struct ospf_packet) + sizeof(union ospf2_auth);
     uint blen = plen - hlen;
     void *body = ((void *) pkt) + hlen;
 
     if (!ipsum_verify(pkt, sizeof(struct ospf_packet), body, blen, NULL))
-      DROP1("invalid checksum");
+      DROP("invalid checksum", ntohs(pkt->checksum));
   }
 
   /* Third, we resolve associated iface and handle vlinks. */
@@ -398,7 +490,7 @@ found:
   }
 
   /* ospf_pkt_checkauth() has its own error logging */
-  if (ospf_is_v2(p) && !ospf_pkt_checkauth(n, ifa, pkt, len))
+  if (!ospf_pkt_checkauth(n, ifa, pkt, len))
     return 1;
 
   switch (pkt->type)
@@ -448,7 +540,7 @@ ospf_tx_hook(sock * sk)
 void
 ospf_err_hook(sock * sk, int err)
 {
-  struct ospf_iface *ifa= (struct ospf_iface *) (sk->data);
+  struct ospf_iface *ifa = (struct ospf_iface *) (sk->data);
   struct ospf_proto *p = ifa->oa->po;
   log(L_ERR "%s: Socket error on %s: %M", p->p.name, ifa->ifname, err);
 }

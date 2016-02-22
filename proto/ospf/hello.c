@@ -14,7 +14,7 @@
 struct ospf_hello2_packet
 {
   struct ospf_packet hdr;
-  union ospf_auth auth;
+  union ospf2_auth auth;
 
   u32 netmask;
   u16 helloint;
@@ -90,10 +90,12 @@ ospf_send_hello(struct ospf_iface *ifa, int kind, struct ospf_neighbor *dirn)
   {
     struct ospf_hello3_packet *ps = (void *) pkt;
 
+    u32 auth_trailer_bit = (ifa->autype == OSPF_AUTH_CRYPT) ? OPT_AT : 0;
+
     ps->iface_id = htonl(ifa->iface_id);
     ps->priority = ifa->priority;
     ps->options3 = ifa->oa->options >> 16;
-    ps->options2 = ifa->oa->options >> 8;
+    ps->options2 = (ifa->oa->options >> 8) | (auth_trailer_bit >> 8);
     ps->options = ifa->oa->options;
     ps->helloint = ntohs(ifa->helloint);
     ps->deadint = htons(ifa->deadint);
@@ -189,8 +191,8 @@ ospf_receive_hello(struct ospf_packet *pkt, struct ospf_iface *ifa,
 {
   struct ospf_proto *p = ifa->oa->po;
   const char *err_dsc = NULL;
-  u32 rcv_iface_id, rcv_helloint, rcv_deadint, rcv_dr, rcv_bdr;
-  u8 rcv_options, rcv_priority;
+  u32 rcv_iface_id, rcv_helloint, rcv_deadint, rcv_dr, rcv_bdr, rcv_options;
+  u8 rcv_priority;
   u32 *neighbors;
   u32 neigh_count;
   uint plen, i, err_val = 0;
@@ -242,11 +244,16 @@ ospf_receive_hello(struct ospf_packet *pkt, struct ospf_iface *ifa,
     rcv_deadint = ntohs(ps->deadint);
     rcv_dr = ntohl(ps->dr);
     rcv_bdr = ntohl(ps->bdr);
-    rcv_options = ps->options;
+    rcv_options  = (u32)ps->options3 << 16;
+    rcv_options |= (u32)ps->options2 << 8;
+    rcv_options |= (u32)ps->options;
     rcv_priority = ps->priority;
 
     neighbors = ps->neighbors;
     neigh_count = (plen - sizeof(struct ospf_hello3_packet)) / sizeof(u32);
+
+    if (ifa->autype == OSPF_AUTH_CRYPT && !(rcv_options & OPT_AT))
+      DROP("missing authentication trailer bit in options field", 0);
   }
 
   if (rcv_helloint != ifa->helloint)
@@ -256,7 +263,8 @@ ospf_receive_hello(struct ospf_packet *pkt, struct ospf_iface *ifa,
     DROP("dead interval mismatch", rcv_deadint);
 
   /* Check whether bits E, N match */
-  if ((rcv_options ^ ifa->oa->options) & (OPT_E | OPT_N))
+  u8 auth_trailer_bit = ifa->autype == OSPF_AUTH_CRYPT ? OPT_AT : 0;
+  if ((rcv_options ^ (ifa->oa->options | auth_trailer_bit)) & (OPT_E | OPT_N))
     DROP("area type mismatch", rcv_options);
 
   /* Check consistency of existing neighbor entry */
