@@ -65,15 +65,6 @@ crypto(union crypto_context *ctx, const struct password_item *pass, const byte *
   const byte *key = pass->password;
   uint keylen = pass->password_len;
 
-  DBG("Crypto(key(%u):", pass->password_len);
-  uint i;
-  for(i = 0; i < pass->password_len; i++)
-    DBG(" %02X", pass->password[i]);
-  DBG(", data(%u):", size);
-  for(i = 0; i < pass->password_len; i++)
-    DBG(" %02X", data[i]);
-  DBG(") -> digest(%u): ", crypto_get_hash_length(type));
-
   check_crypto_type(type);
 
   if (crypto_table[type].init)
@@ -91,12 +82,7 @@ crypto(union crypto_context *ctx, const struct password_item *pass, const byte *
     crypto_table[type].update(ctx, data, size);
   }
 
-  byte *digest = crypto_table[type].final(ctx);
-  for (i = 0; i < crypto_get_hash_length(type); i++)
-    DBG("%02X ", digest[i]);
-  DBG("\n");
-
-  return digest;
+  return crypto_table[type].final(ctx);
 }
 
 /*
