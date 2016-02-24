@@ -137,21 +137,24 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
        reboot when system does not have independent RTC? */
     if (!ifa->csn)
     {
-      ifa->csn = (u64) now;
+      ifa->csn = (u32) now;
       ifa->csn_use = now;
+
+      for (uint i = 0; i < OSPF_PKT_TYPES; i++)
+	ifa->csn3[i] = (u64) now;
     }
 
-    /* We must have sufficient delay between sending a packet and increasing
-       CSN to prevent reordering of packets (in a network) with different CSNs */
-    if ((now - ifa->csn_use) > 1)
-      ifa->csn++;
-
-    ifa->csn_use = now;
     uint crypto_len = crypto_get_hash_length(passwd->crypto_type);
     uint extra_bytes;
 
     if (ospf_is_v2(p))
     {
+      /* We must have sufficient delay between sending a packet and increasing
+         CSN to prevent reordering of packets (in a network) with different CSNs */
+      if ((now - ifa->csn_use) > 1)
+        ifa->csn++;
+      ifa->csn_use = now;
+
       extra_bytes = crypto_len;
       auth2->crypto.zero = 0;
       auth2->crypto.keyid = passwd->id;
@@ -165,7 +168,7 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
       auth3->length = htons(extra_bytes);
       auth3->reserved = 0;
       auth3->sa_id = htons((u16) passwd->id);
-      put_u64(&auth3->csn, ifa->csn);
+      put_u64(&auth3->csn, ifa->csn3[pkt->type]++);
     }
 
     union crypto_context c;
@@ -225,20 +228,29 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
   case OSPF_AUTH_CRYPT:
   {
     u64 rcv_csn;
+    u64 min_expected_csn;
     int key_id;
     uint rcv_crypt_len;
     uint rcv_auth_len;
 
     if (ospf_is_v2(p))
     {
-      rcv_csn = ntohl(auth2->crypto.csn);
+      if (n)
+      {
+	rcv_csn = ntohl(auth2->crypto.csn);
+	min_expected_csn = n->csn;
+      }
       key_id  = auth2->crypto.keyid;
       rcv_crypt_len = auth2->crypto.len;
       rcv_auth_len  = auth2->crypto.len;
     }
     else /* OSPFv3 */
     {
-      rcv_csn = get_u64(&auth3->csn);
+      if (n)
+      {
+	rcv_csn = get_u64(&auth3->csn);
+	min_expected_csn = n->csn3[pkt->type] + 1;
+      }
       key_id  = ntohs(auth3->sa_id);
       rcv_crypt_len = ntohs(auth3->length) - sizeof(struct ospf3_auth);
       rcv_auth_len  = ntohs(auth3->length);
@@ -247,12 +259,12 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
       pkt->checksum = 0;
     }
 
-    if (n && (rcv_csn < n->csn))
+    if (n && (rcv_csn < min_expected_csn))
     {
       /* We want to report both new and old CSN */
       LOG_PKT_AUTH("Authentication failed for nbr %R on %s - "
-		   "lower sequence number (rcv %u, old %u)",
-		   n->rid, ifa->ifname, rcv_csn, n->csn);
+		   "lower sequence number (rcv %u, expected at least %u)",
+		   n->rid, ifa->ifname, rcv_csn, min_expected_csn);
       return 0;
     }
 
@@ -272,8 +284,11 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
     if (!is_crypto_digest_valid(&ctx, pass, (const byte *) pkt, plen, received))
       DROP("wrong cryptographic digest", pass->id);
 
-    if (n)
+    if (n && ospf_is_v2(p))
       n->csn = rcv_csn;
+
+    if (n && ospf_is_v3(p))
+      n->csn3[pkt->type] = rcv_csn;
 
     return 1;
   }

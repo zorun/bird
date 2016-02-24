@@ -253,7 +253,13 @@ struct ospf_area
   struct fib rtr;		/* Routing tables for routers */
 };
 
-
+/* Packet types */
+#define HELLO_P		1	/* Hello */
+#define DBDES_P		2	/* Database description */
+#define LSREQ_P		3	/* Link state request */
+#define LSUPD_P		4	/* Link state update */
+#define LSACK_P		5	/* Link state acknowledgement */
+#define OSPF_PKT_TYPES	5	/* There are 5 types of OSPF packet */
 
 struct ospf_iface
 {
@@ -282,8 +288,9 @@ struct ospf_iface
 				   interface.  LSAs contained in the update */
   u16 helloint;			/* number of seconds between hello sending */
   list *passwords;
-  u64 csn;                      /* Last used crypt seq number */
-  bird_clock_t csn_use;         /* Last time when packet with that CSN was sent */
+  u32 csn;			/* OSPFv2: Last used crypt seq number */
+  bird_clock_t csn_use;		/* OSPFv2: Last time when packet with that CSN was sent */
+  u64 csn3[OSPF_PKT_TYPES];	/* OSPFv3: Last used crypt seq number for each type of packet */
   ip_addr all_routers;		/* Multicast (or broadcast) address for all routers */
   ip_addr des_routers;		/* Multicast (or NULL) address for designated routers */
   ip_addr drip;			/* Designated router IP */
@@ -385,7 +392,8 @@ struct ospf_neighbor
   struct bfd_request *bfd_req;	/* BFD request, if BFD is used */
   void *ldd_buffer;		/* Last database description packet */
   u32 ldd_bsize;		/* Buffer size for ldd_buffer */
-  u32 csn;                      /* Last received crypt seq number (for MD5) */
+  u32 csn;			/* OSPFv2: Last received crypt seq number */
+  u64 csn3[OSPF_PKT_TYPES];	/* OSPFv3: Last received crypt seq number for each type of packet */
 };
 
 
@@ -506,14 +514,6 @@ union ospf2_auth		/* Size must be 8 bytes for fit in packet */
   u8 password[8];
   struct ospf2_auth_crypto crypto;
 };
-
-/* Packet types */
-#define HELLO_P		1	/* Hello */
-#define DBDES_P		2	/* Database description */
-#define LSREQ_P		3	/* Link state request */
-#define LSUPD_P		4	/* Link state update */
-#define LSACK_P		5	/* Link state acknowledgement */
-
 
 #define DBDES_I		4	/* Init bit */
 #define DBDES_M		2	/* More bit */
