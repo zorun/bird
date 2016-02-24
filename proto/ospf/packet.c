@@ -80,16 +80,14 @@ ospf_get_packet_tail(struct ospf_iface* ifa, struct ospf_packet *pkt)
  * Return an extra packet size that should be added to a final packet size
  */
 static uint
-ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
+ospf2_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
 {
   struct password_item *passwd = NULL;
   struct ospf_proto *p = ifa->oa->po;
   uint plen = ntohs(pkt->length);
 
-  void *auth = ospf_get_auth_trailer(ifa, pkt);
-  union ospf2_auth *auth2 = auth;
-  struct ospf3_auth *auth3 = auth;
-  bzero(auth, ospf_is_v2(p) ? sizeof(union ospf2_auth) : sizeof(struct ospf3_auth));
+  union ospf2_auth *auth2 = ospf_get_auth_trailer(ifa, pkt);;
+  bzero(auth2, sizeof(union ospf2_auth));
 
   pkt->checksum = 0;
   pkt->autype = ifa->autype;
@@ -100,12 +98,6 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
   switch (ifa->autype)
   {
   case OSPF_AUTH_SIMPLE:
-    if (ospf_is_v3(p))
-    {
-      log(L_ERR "Simple authentication not allowed in OSPFv3");
-      break;
-    }
-
     passwd = password_find(ifa->passwords, 1);
     if (!passwd)
     {
@@ -116,12 +108,9 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
 
   case OSPF_AUTH_NONE:
     {
-      if (ospf_is_v2(p))
-      {
-	void *body = (void *) (auth2 + 1);
-	uint blen = plen - sizeof(struct ospf_packet) - sizeof(union ospf2_auth);
-	pkt->checksum = ipsum_calculate(pkt, sizeof(struct ospf_packet), body, blen, NULL);
-      }
+      void *body = (void *) (auth2 + 1);
+      uint blen = plen - sizeof(struct ospf_packet) - sizeof(union ospf2_auth);
+      pkt->checksum = ipsum_calculate(pkt, sizeof(struct ospf_packet), body, blen, NULL);
     }
     break;
 
@@ -139,37 +128,79 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
     {
       ifa->csn = (u32) now;
       ifa->csn_use = now;
-
-      for (uint i = 0; i < OSPF_PKT_TYPES; i++)
-	ifa->csn3[i] = (u64) now;
     }
+
+    /* We must have sufficient delay between sending a packet and increasing
+         CSN to prevent reordering of packets (in a network) with different CSNs */
+    if ((now - ifa->csn_use) > 1)
+      ifa->csn++;
+    ifa->csn_use = now;
 
     uint crypto_len = crypto_get_hash_length(passwd->crypto_type);
-    uint extra_bytes;
 
-    if (ospf_is_v2(p))
-    {
-      /* We must have sufficient delay between sending a packet and increasing
-         CSN to prevent reordering of packets (in a network) with different CSNs */
-      if ((now - ifa->csn_use) > 1)
-        ifa->csn++;
-      ifa->csn_use = now;
+    auth2->crypto.zero = 0;
+    auth2->crypto.keyid = passwd->id;
+    auth2->crypto.len = crypto_len;
+    auth2->crypto.csn = htonl(ifa->csn);
 
-      extra_bytes = crypto_len;
-      auth2->crypto.zero = 0;
-      auth2->crypto.keyid = passwd->id;
-      auth2->crypto.len = extra_bytes;
-      auth2->crypto.csn = htonl(ifa->csn);
-    }
-    else /* OSPFv3 */
+    union crypto_context c;
+    byte *hash = crypto(&c, passwd, (const byte *) pkt, plen);
+    memcpy(ospf_get_packet_tail(ifa, pkt), hash, crypto_len);
+
+    return crypto_len;
+
+  default:
+    bug("Unknown authentication type");
+  }
+  return 0;
+}
+
+/*
+ * Return an extra packet size that should be added to a final packet size
+ */
+static uint
+ospf3_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
+{
+  struct password_item *passwd = NULL;
+  struct ospf_proto *p = ifa->oa->po;
+  uint plen = ntohs(pkt->length);
+
+  struct ospf3_auth *auth3 = ospf_get_auth_trailer(ifa, pkt);
+  bzero(auth3, sizeof(struct ospf3_auth));
+
+  pkt->checksum = 0;
+  pkt->autype = ifa->autype;
+
+  /* Compatibility note: auth may contain anything if autype is
+     none, but nonzero values do not work with Mikrotik OSPF */
+
+  switch (ifa->autype)
+  {
+  case OSPF_AUTH_NONE:
+    return 1;
+
+  case OSPF_AUTH_CRYPT:
+    passwd = password_find(ifa->passwords, 0);
+    if (!passwd)
     {
-      extra_bytes = sizeof(struct ospf3_auth) + crypto_len;
-      auth3->type = htons(OSPF3_AUTH_HMAC);
-      auth3->length = htons(extra_bytes);
-      auth3->reserved = 0;
-      auth3->sa_id = htons((u16) passwd->id);
-      put_u64(&auth3->csn, ifa->csn3[pkt->type]++);
+      log(L_ERR "No suitable password found for authentication");
+      break;
     }
+
+    /* Perhaps use random value to prevent replay attacks after
+       reboot when system does not have independent RTC? */
+    if (!ifa->csn3)
+      ifa->csn3 = now_real;
+    ifa->csn3++;
+
+    uint crypto_len = crypto_get_hash_length(passwd->crypto_type);
+    uint extra_bytes = sizeof(struct ospf3_auth) + crypto_len;
+
+    auth3->type = htons(OSPF3_AUTH_HMAC);
+    auth3->length = htons(extra_bytes);
+    auth3->reserved = 0;
+    auth3->sa_id = htons((u16) passwd->id);
+    put_u64(&auth3->csn, ifa->csn3);
 
     union crypto_context c;
     byte *hash = crypto(&c, passwd, (const byte *) pkt, plen);
@@ -181,6 +212,20 @@ ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
     bug("Unknown authentication type");
   }
   return 0;
+}
+
+/*
+ * Return an extra packet size that should be added to a final packet size
+ */
+static uint
+ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
+{
+  struct ospf_proto *p = ifa->oa->po;
+
+  if (ospf_is_v2(p))
+    return ospf2_pkt_finalize(ifa, pkt);
+  else
+    return ospf3_pkt_finalize(ifa, pkt);
 }
 
 static int

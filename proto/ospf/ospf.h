@@ -290,7 +290,7 @@ struct ospf_iface
   list *passwords;
   u32 csn;			/* OSPFv2: Last used crypt seq number */
   bird_clock_t csn_use;		/* OSPFv2: Last time when packet with that CSN was sent */
-  u64 csn3[OSPF_PKT_TYPES];	/* OSPFv3: Last used crypt seq number for each type of packet */
+  u64 csn3;			/* OSPFv3: Last used crypt seq number */
   ip_addr all_routers;		/* Multicast (or broadcast) address for all routers */
   ip_addr des_routers;		/* Multicast (or NULL) address for designated routers */
   ip_addr drip;			/* Designated router IP */
