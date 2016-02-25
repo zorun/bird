@@ -463,8 +463,11 @@ struct ospf_neighbor
 #define OPT_P		0x08	/* OSPFv2, flags P and N share position, see NSSA RFC */
 #define OPT_EA		0x10	/* OSPFv2, external attributes, not used and obsolete */
 #define OPT_R		0x10	/* OSPFv3, originator is active router */
+#define OPT_L2		0x10	/* OSPFv2, link-local signaling, not used */
 #define OPT_DC		0x20	/* Related to demand circuits, not used */
-#define OPT_AT          0x400	/* OSPFv3, authentication trailer bit */
+#define OPT_AF		0x100	/* OSPFv3, address families, not used  */
+#define OPT_L		0x200	/* OSPFv3, link-local signaling */
+#define OPT_AT          0x400	/* OSPFv3, authentication trailer */
 
 /* Router-LSA VEB flags are are stored together with links (OSPFv2) or options (OSPFv3) */
 #define OPT_RT_B	(0x01 << 24)
@@ -940,6 +943,7 @@ static inline void * ospf_tx_buffer(struct ospf_iface *ifa)
 
 void ospf_send_hello(struct ospf_iface *ifa, int kind, struct ospf_neighbor *dirn);
 void ospf_receive_hello(struct ospf_packet *pkt, struct ospf_iface *ifa, struct ospf_neighbor *n, ip_addr faddr);
+u32  ospf_get_hello_options(struct ospf_packet *pkt);
 
 /* dbdes.c */
 void ospf_send_dbdes(struct ospf_proto *p, struct ospf_neighbor *n);

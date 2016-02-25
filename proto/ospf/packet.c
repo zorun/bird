@@ -13,6 +13,13 @@
 #include "lib/md5.h"
 #include "lib/socket.h"
 
+struct ospf_lls_data_block
+{
+  u16 checksum;
+  u16 length;
+  byte data[];
+};
+
 void
 ospf_pkt_fill_hdr(struct ospf_iface *ifa, void *buf, u8 h_type)
 {
@@ -44,39 +51,6 @@ ospf_pkt_maxsize(struct ospf_proto *p, struct ospf_iface *ifa)
 }
 
 /*
- * Return
- *   pointer to the start of OSPFv2 authentication header (inside of packet) or
- *   pointer to the start of OSPFv3 authentication header (at the end of packet)
- */
-static void *
-ospf_get_auth_trailer(struct ospf_iface* ifa, struct ospf_packet *pkt)
-{
-  struct ospf_proto *p = ifa->oa->po;
-  uint plen = ntohs(pkt->length);
-
-  if (ospf_is_v2(p))
-    return (void *) (pkt + 1);
-  else /* OSPFv3 */
-    /* Assume we don't use OSPF Link-Local Signaling blocks (RFC 5613) */
-    return (void *) ((byte *) pkt + plen);
-}
-
-static byte *
-ospf_get_packet_tail(struct ospf_iface* ifa, struct ospf_packet *pkt)
-{
-  struct ospf_proto *p = ifa->oa->po;
-  uint plen = ntohs(pkt->length);
-
-  uint ospf3_auth_len = ifa->autype == OSPF_AUTH_CRYPT ? sizeof(struct ospf3_auth) : 0;
-
-  if (ospf_is_v2(p))
-    return ((byte *) pkt + plen);
-  else /* OSPFv3 */
-    /* Assume we don't use OSPF Link-Local Signaling blocks (RFC 5613) */
-    return ((byte *) pkt + plen + ospf3_auth_len);
-}
-
-/*
  * Return an extra packet size that should be added to a final packet size
  */
 static uint
@@ -85,9 +59,8 @@ ospf2_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
   struct password_item *passwd = NULL;
   struct ospf_proto *p = ifa->oa->po;
   uint plen = ntohs(pkt->length);
-
-  union ospf2_auth *auth2 = ospf_get_auth_trailer(ifa, pkt);;
-  bzero(auth2, sizeof(union ospf2_auth));
+  union ospf2_auth *auth2 = (void *) (pkt + 1);
+  memset(auth2, 0, sizeof(union ospf2_auth));
 
   pkt->checksum = 0;
   pkt->autype = ifa->autype;
@@ -145,7 +118,8 @@ ospf2_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
 
     union crypto_context c;
     byte *hash = crypto(&c, passwd, (const byte *) pkt, plen);
-    memcpy(ospf_get_packet_tail(ifa, pkt), hash, crypto_len);
+    byte *tail = ((byte *) pkt + plen);
+    memcpy(tail, hash, crypto_len);
 
     return crypto_len;
 
@@ -164,9 +138,8 @@ ospf3_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
   struct password_item *passwd = NULL;
   struct ospf_proto *p = ifa->oa->po;
   uint plen = ntohs(pkt->length);
-
-  struct ospf3_auth *auth3 = ospf_get_auth_trailer(ifa, pkt);
-  bzero(auth3, sizeof(struct ospf3_auth));
+  struct ospf3_auth *auth3 = (void *) ((byte *) pkt + plen);
+  memset(auth3, 0, sizeof(struct ospf3_auth));
 
   pkt->checksum = 0;
   pkt->autype = ifa->autype;
@@ -204,7 +177,8 @@ ospf3_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
 
     union crypto_context c;
     byte *hash = crypto(&c, passwd, (const byte *) pkt, plen);
-    memcpy(ospf_get_packet_tail(ifa, pkt), hash, crypto_len);
+    byte *tail = (byte *) (auth3 + 1);
+    memcpy(tail, hash, crypto_len);
 
     return extra_bytes;
 
@@ -217,26 +191,11 @@ ospf3_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
 /*
  * Return an extra packet size that should be added to a final packet size
  */
-static uint
-ospf_pkt_finalize(struct ospf_iface* ifa, struct ospf_packet* pkt)
-{
-  struct ospf_proto *p = ifa->oa->po;
-
-  if (ospf_is_v2(p))
-    return ospf2_pkt_finalize(ifa, pkt);
-  else
-    return ospf3_pkt_finalize(ifa, pkt);
-}
-
 static int
-ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_packet *pkt, int len)
+ospf2_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_packet *pkt, int len)
 {
   struct ospf_proto *p = ifa->oa->po;
-
-  void *auth = ospf_get_auth_trailer(ifa, pkt);
-  union ospf2_auth *auth2 = auth;
-  struct ospf3_auth *auth3 = auth;
-
+  union ospf2_auth *auth2 = (void *) (pkt + 1);
   struct password_item *pass = NULL;
   const char *err_dsc = NULL;
   uint err_val = 0;
@@ -244,13 +203,8 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
   uint plen = ntohs(pkt->length);
   u8 autype = ifa->autype;
 
-  if (ospf_is_v2(p) && pkt->autype != autype)
+  if (pkt->autype != autype)
     DROP("authentication method mismatch", pkt->autype);
-
-  if (ospf_is_v3(p) && autype == OSPF_AUTH_CRYPT && ntohs(auth3->type) != OSPF3_AUTH_HMAC)
-    DROP("does not include HMAC Cryptographic Authentication type", len);
-
-  /* OSPFv3: OPT_AT flag is checked at packet specific type received function */
 
   switch (autype)
   {
@@ -258,9 +212,6 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
     return 1;
 
   case OSPF_AUTH_SIMPLE:
-    if (ospf_is_v3(p))
-      DROP1("simple authentication not allowed in OSPF3");
-
     pass = password_find(ifa->passwords, 1);
     if (!pass)
       DROP1("no password found");
@@ -278,31 +229,122 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
     uint rcv_crypt_len;
     uint rcv_auth_len;
 
-    if (ospf_is_v2(p))
+    if (n)
     {
-      if (n)
-      {
-	rcv_csn = ntohl(auth2->crypto.csn);
-	min_expected_csn = n->csn;
-      }
-      key_id  = auth2->crypto.keyid;
-      rcv_crypt_len = auth2->crypto.len;
-      rcv_auth_len  = auth2->crypto.len;
+      rcv_csn = ntohl(auth2->crypto.csn);
+      min_expected_csn = n->csn;
     }
-    else /* OSPFv3 */
-    {
-      if (n)
-      {
-	rcv_csn = get_u64(&auth3->csn);
-	min_expected_csn = n->csn3[pkt->type] + 1;
-      }
-      key_id  = ntohs(auth3->sa_id);
-      rcv_crypt_len = ntohs(auth3->length) - sizeof(struct ospf3_auth);
-      rcv_auth_len  = ntohs(auth3->length);
+    key_id  = auth2->crypto.keyid;
+    rcv_crypt_len = auth2->crypto.len;
+    rcv_auth_len  = auth2->crypto.len;
 
-      /* RFC 7166 4.2 - omitting OSPFv3 header checksum */
-      pkt->checksum = 0;
+    if (n && (rcv_csn < min_expected_csn))
+    {
+      /* We want to report both new and old CSN */
+      LOG_PKT_AUTH("Authentication failed for nbr %R on %s - "
+	  "lower sequence number (rcv %u, expected at least %u)",
+	  n->rid, ifa->ifname, rcv_csn, min_expected_csn);
+      return 0;
     }
+
+    pass = password_find_by_id(ifa->passwords, key_id);
+    if (!pass)
+      DROP("no suitable password found", key_id);
+
+    uint expected_crypt_len = crypto_get_hash_length(pass->crypto_type);
+    if (rcv_crypt_len != expected_crypt_len)
+      DROP("invalid cryptographic digest length", rcv_crypt_len);
+
+    if (plen + rcv_auth_len > len)
+      DROP("length mismatch", len);
+
+    union crypto_context ctx;
+    byte *received = ((byte *) pkt + plen);
+    if (!is_crypto_digest_valid(&ctx, pass, (const byte *) pkt, plen, received))
+      DROP("wrong cryptographic digest", pass->id);
+
+    if (n)
+      n->csn = rcv_csn;
+
+    return 1;
+  }
+
+  default:
+    bug("Unknown authentication type");
+  }
+
+  drop:
+  LOG_PKT_AUTH("Authentication failed for nbr %R on %s - %s (%u)",
+	       (n ? n->rid : ntohl(pkt->routerid)), ifa->ifname, err_dsc, err_val);
+
+  return 0;
+}
+
+static int
+ospf3_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_packet *pkt, int len)
+{
+  struct ospf_proto *p = ifa->oa->po;
+  struct password_item *pass = NULL;
+  const char *err_dsc = NULL;
+  uint err_val = 0;
+  uint plen = ntohs(pkt->length);
+  u8 autype = ifa->autype;
+  struct ospf3_auth *auth3;
+  int is_lls_present = 0;
+  int is_auth_present = 0;
+
+  if (!n && pkt->type == HELLO_P)
+  {
+    is_auth_present = ospf_get_hello_options(pkt) & OPT_AT;
+    is_lls_present  = ospf_get_hello_options(pkt) & OPT_L;
+  }
+  else if (n)
+  {
+    is_auth_present = n->options & OPT_AT;
+    is_lls_present  = n->options & OPT_L;
+  }
+
+  if (autype == OSPF_AUTH_CRYPT && !is_auth_present)
+    DROP("missing authentication trailer bit in options field", 0);
+
+  /* HMAC cryptographic authentication type should be 1, it isn't checked */
+
+  if (is_lls_present)
+  {
+    struct ospf_lls_data_block *lls = (void *) ((byte *) pkt + plen);
+    auth3 = (void *) ((byte *) lls + ntohs(lls->length));
+  }
+  else
+    auth3 = (void *) ((byte *) pkt + plen);
+
+  switch (autype)
+  {
+  case OSPF_AUTH_NONE:
+    return 1;
+
+  case OSPF_AUTH_CRYPT:
+  {
+    u64 rcv_csn;
+    u64 min_expected_csn;
+    int key_id;
+    uint rcv_crypt_len;
+    uint rcv_auth_len;
+
+    if (n)
+    {
+      rcv_csn = get_u64(&auth3->csn);
+      min_expected_csn = n->csn3[pkt->type] + 1;
+    }
+    key_id  = ntohs(auth3->sa_id);
+    rcv_crypt_len = ntohs(auth3->length) - sizeof(struct ospf3_auth);
+    rcv_auth_len  = ntohs(auth3->length);
+
+    /* RFC 7166 4.2 - omitting header checksum */
+    pkt->checksum = 0;
+
+    /* RFC 5613 2.2 - omitting LLS checksum */
+    if (is_lls_present)
+      ((struct ospf_lls_data_block *) ((byte *) pkt + plen))->checksum = 0;
 
     if (n && (rcv_csn < min_expected_csn))
     {
@@ -325,14 +367,11 @@ ospf_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf_
       DROP("length mismatch", len);
 
     union crypto_context ctx;
-    byte *received = ospf_get_packet_tail(ifa, pkt);
+    byte *received = (byte *) (auth3 + 1);
     if (!is_crypto_digest_valid(&ctx, pass, (const byte *) pkt, plen, received))
       DROP("wrong cryptographic digest", pass->id);
 
-    if (n && ospf_is_v2(p))
-      n->csn = rcv_csn;
-
-    if (n && ospf_is_v3(p))
+    if (n)
       n->csn3[pkt->type] = rcv_csn;
 
     return 1;
@@ -550,7 +589,8 @@ found:
   }
 
   /* ospf_pkt_checkauth() has its own error logging */
-  if (!ospf_pkt_checkauth(n, ifa, pkt, len))
+  if ((ospf_is_v2(p) && !ospf2_pkt_checkauth(n, ifa, pkt, len)) ||
+      (ospf_is_v3(p) && !ospf3_pkt_checkauth(n, ifa, pkt, len)))
     return 1;
 
   switch (pkt->type)
@@ -619,7 +659,10 @@ ospf_send_to(struct ospf_iface *ifa, ip_addr dst)
   struct ospf_packet *pkt = (struct ospf_packet *) sk->tbuf;
   int plen = ntohs(pkt->length);
 
-  plen += ospf_pkt_finalize(ifa, pkt);
+  if (ospf_is_v2(ifa->oa->po))
+    plen += ospf2_pkt_finalize(ifa, pkt);
+  else
+    plen += ospf3_pkt_finalize(ifa, pkt);
 
   int done = sk_send_to(sk, plen, dst, 0);
   if (!done)
