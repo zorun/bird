@@ -37,6 +37,19 @@ struct ospf_dbdes3_packet
   struct ospf_lsa_header lsas[];
 };
 
+int
+ospf3_dbdes_is_auth_used(struct ospf_packet *pkt)
+{
+  struct ospf_dbdes3_packet *ps = (void *) pkt;
+  return ntohl(ps->options) & OPT_AT;
+}
+
+int
+ospf3_dbdes_is_lls_used(struct ospf_packet *pkt)
+{
+  struct ospf_dbdes3_packet *ps = (void *) pkt;
+  return ntohl(ps->options) & OPT_L_V3;
+}
 
 static inline uint
 ospf_dbdes_hdrlen(struct ospf_proto *p)

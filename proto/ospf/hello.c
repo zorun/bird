@@ -44,19 +44,22 @@ struct ospf_hello3_packet
   u32 neighbors[];
 };
 
-u32
-ospf_get_hello_options(struct ospf_packet *pkt)
+static u32
+ospf3_get_hello_options(struct ospf_hello3_packet *ps)
 {
-  struct ospf_hello2_packet *p2;
-  struct ospf_hello3_packet *p3;
+  return ((u32) ps->options3 << 16) | ((u32) ps->options2 << 8) | ps->options;
+}
 
-  if (pkt->version == 2)
-    return p2->options;
+int
+ospf3_hello_is_auth_used(struct ospf_packet *pkt)
+{
+  return ospf3_get_hello_options((void *) pkt) & OPT_AT;
+}
 
-  if (pkt->version == 3)
-    return ((u32) p3->options3 << 16) | ((u32) p3->options2 << 8) | p3->options;
-
-  return 0;
+int
+ospf3_hello_is_lls_used(struct ospf_packet *pkt)
+{
+  return ospf3_get_hello_options((void *) pkt) & OPT_L_V3;
 }
 
 void
@@ -260,7 +263,7 @@ ospf_receive_hello(struct ospf_packet *pkt, struct ospf_iface *ifa,
     rcv_deadint = ntohs(ps->deadint);
     rcv_dr = ntohl(ps->dr);
     rcv_bdr = ntohl(ps->bdr);
-    rcv_options  = ospf_get_hello_options(pkt);
+    rcv_options  = ospf3_get_hello_options(ps);
     rcv_priority = ps->priority;
 
     neighbors = ps->neighbors;
@@ -352,7 +355,6 @@ ospf_receive_hello(struct ospf_packet *pkt, struct ospf_iface *ifa,
   n->bdr = rcv_bdr;
   n->priority = rcv_priority;
   n->iface_id = rcv_iface_id;
-
 
   /* Update inactivity timer */
   ospf_neigh_sm(n, INM_HELLOREC);

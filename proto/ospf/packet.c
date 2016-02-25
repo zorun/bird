@@ -290,32 +290,26 @@ ospf3_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf
   uint plen = ntohs(pkt->length);
   u8 autype = ifa->autype;
   struct ospf3_auth *auth3;
-  int is_lls_present = 0;
-  int is_auth_present = 0;
+  int is_lls_present;
+  int is_auth_present;
 
-  if (!n && pkt->type == HELLO_P)
+  switch(pkt->type)
   {
-    is_auth_present = ospf_get_hello_options(pkt) & OPT_AT;
-    is_lls_present  = ospf_get_hello_options(pkt) & OPT_L;
-  }
-  else if (n)
-  {
+  case HELLO_P:
+    is_auth_present = ospf3_hello_is_auth_used(pkt);
+    is_lls_present  = ospf3_hello_is_lls_used(pkt);
+    break;
+
+  case DBDES_P:
+    is_auth_present = ospf3_dbdes_is_auth_used(pkt);
+    is_lls_present  = ospf3_dbdes_is_lls_used(pkt);
+    break;
+
+  default:
+    ASSERT(n);
     is_auth_present = n->options & OPT_AT;
-    is_lls_present  = n->options & OPT_L;
+    is_lls_present = 0;
   }
-
-  if (autype == OSPF_AUTH_CRYPT && !is_auth_present)
-    DROP("missing authentication trailer bit in options field", 0);
-
-  /* HMAC cryptographic authentication type should be 1, it isn't checked */
-
-  if (is_lls_present)
-  {
-    struct ospf_lls_data_block *lls = (void *) ((byte *) pkt + plen);
-    auth3 = (void *) ((byte *) lls + ntohs(lls->length));
-  }
-  else
-    auth3 = (void *) ((byte *) pkt + plen);
 
   switch (autype)
   {
@@ -330,6 +324,19 @@ ospf3_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf
     uint rcv_crypt_len;
     uint rcv_auth_len;
 
+    if (!is_auth_present)
+      DROP("missing authentication trailer bit in options field", 0);
+
+    /* HMAC cryptographic authentication type should be 1, it isn't verified */
+
+    if (is_lls_present)
+    {
+      struct ospf_lls_data_block *lls = (void *) ((byte *) pkt + plen);
+      auth3 = (void *) ((byte *) lls + ntohs(lls->length));
+    }
+    else
+      auth3 = (void *) ((byte *) pkt + plen);
+
     if (n)
     {
       rcv_csn = get_u64(&auth3->csn);
@@ -338,13 +345,6 @@ ospf3_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf
     key_id  = ntohs(auth3->sa_id);
     rcv_crypt_len = ntohs(auth3->length) - sizeof(struct ospf3_auth);
     rcv_auth_len  = ntohs(auth3->length);
-
-    /* RFC 7166 4.2 - omitting header checksum */
-    pkt->checksum = 0;
-
-    /* RFC 5613 2.2 - omitting LLS checksum */
-    if (is_lls_present)
-      ((struct ospf_lls_data_block *) ((byte *) pkt + plen))->checksum = 0;
 
     if (n && (rcv_csn < min_expected_csn))
     {
@@ -355,16 +355,23 @@ ospf3_pkt_checkauth(struct ospf_neighbor *n, struct ospf_iface *ifa, struct ospf
       return 0;
     }
 
-    pass = password_find_by_id(ifa->passwords, key_id);
-    if (!pass)
-      DROP("no suitable password found", key_id);
-
     uint expected_crypt_len = crypto_get_hash_length(pass->crypto_type);
     if (rcv_crypt_len != expected_crypt_len)
       DROP("invalid cryptographic digest length", rcv_crypt_len);
 
     if (plen + rcv_auth_len > len)
       DROP("length mismatch", len);
+
+    pass = password_find_by_id(ifa->passwords, key_id);
+    if (!pass)
+      DROP("no suitable password found", key_id);
+
+    /* RFC 7166 4.2 - omitting header checksum */
+    pkt->checksum = 0;
+
+    /* RFC 5613 2.2 - omitting LLS checksum */
+    if (is_lls_present)
+      ((struct ospf_lls_data_block *) ((byte *) pkt + plen))->checksum = 0;
 
     union crypto_context ctx;
     byte *received = (byte *) (auth3 + 1);
