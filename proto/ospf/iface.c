@@ -1112,9 +1112,15 @@ ospf_ifa_notify3(struct proto *P, uint flags, struct ifa *a)
   {
     if (flags & IF_CHANGE_UP)
     {
-      struct ospf_mip_walk s = { .iface = a->iface };
-      while (ospf_walk_matching_iface_patts(p, &s))
-	ospf_iface_new(s.oa, a, s.ip);
+      if (a->flags & IA_TENTATIVE)
+	log(L_WARN "%s: Link-local addr %I is tentative", p->p.name, a->ip);
+      else
+      {
+	struct ospf_mip_walk s = { .iface = a->iface };
+	while (ospf_walk_matching_iface_patts(p, &s))
+	  ospf_iface_new(s.oa, a, s.ip);
+      }
+
     }
 
     if (flags & IF_CHANGE_DOWN)

@@ -525,7 +525,7 @@ ifa_update(struct ifa *a)
 	if (ipa_equal(b->brd, a->brd) &&
 	    ipa_equal(b->opposite, a->opposite) &&
 	    b->scope == a->scope &&
-	    !((b->flags ^ a->flags) & IA_PEER))
+	    !((b->flags ^ a->flags) & (IA_PEER | IA_TENTATIVE)))
 	  {
 	    b->flags |= IF_UPDATED;
 	    return b;

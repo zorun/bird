@@ -138,38 +138,22 @@ radv_iface_add(struct object_lock *lock)
   radv_iface_notify(ifa, RA_EV_INIT);
 }
 
-static inline struct ifa *
-find_lladdr(struct iface *iface)
-{
-  struct ifa *a;
-  WALK_LIST(a, iface->addrs)
-    if (a->scope == SCOPE_LINK)
-      return a;
-
-  return NULL;
-}
-
 static void
-radv_iface_new(struct proto_radv *ra, struct iface *iface, struct radv_iface_config *cf)
+radv_iface_new(struct proto_radv *ra, struct ifa *a, struct radv_iface_config *cf)
 {
   pool *pool = ra->p.pool;
   struct radv_iface *ifa;
 
-  RADV_TRACE(D_EVENTS, "Adding interface %s", iface->name);
+  RADV_TRACE(D_EVENTS, "Adding interface %s", a->iface->name);
 
   ifa = mb_allocz(pool, sizeof(struct radv_iface));
   ifa->ra = ra;
   ifa->cf = cf;
-  ifa->iface = iface;
+  ifa->iface = a->iface;
 
   add_tail(&ra->iface_list, NODE ifa);
 
-  ifa->addr = find_lladdr(iface);
-  if (!ifa->addr)
-  {
-    log(L_ERR "%s: Cannot find link-locad addr on interface %s", ra->p.name, iface->name);
-    return;
-  }
+  ifa->addr = a;
 
   timer *tm = tm_new(pool);
   tm->hook = radv_timer;
@@ -182,7 +166,7 @@ radv_iface_new(struct proto_radv *ra, struct iface *iface, struct radv_iface_con
   lock->addr = IPA_NONE;
   lock->type = OBJLOCK_IP;
   lock->port = ICMPV6_PROTO;
-  lock->iface = iface;
+  lock->iface = a->iface;
   lock->data = ifa;
   lock->hook = radv_iface_add;
   ifa->lock = lock;
@@ -209,21 +193,9 @@ static void
 radv_if_notify(struct proto *p, unsigned flags, struct iface *iface)
 {
   struct proto_radv *ra = (struct proto_radv *) p;
-  struct radv_config *cf = (struct radv_config *) (p->cf);
 
   if (iface->flags & IF_IGNORE)
     return;
-
-  if (flags & IF_CHANGE_UP)
-  {
-    struct radv_iface_config *ic = (struct radv_iface_config *)
-      iface_patt_find(&cf->patt_list, iface, NULL);
-
-    if (ic)
-      radv_iface_new(ra, iface, ic);
-
-    return;
-  }
 
   struct radv_iface *ifa = radv_iface_find(ra, iface);
   if (!ifa)
@@ -243,12 +215,36 @@ static void
 radv_ifa_notify(struct proto *p, unsigned flags, struct ifa *a)
 {
   struct proto_radv *ra = (struct proto_radv *) p;
+  struct radv_config *cf = (struct radv_config *) (p->cf);
 
   if (a->flags & IA_SECONDARY)
     return;
 
-  if (a->scope <= SCOPE_LINK)
+  if (a->scope < SCOPE_LINK)
     return;
+
+  if (a->scope == SCOPE_LINK)
+    if (a->flags & IA_TENTATIVE)
+    {
+      log(L_WARN "%s: Link-local addr %I on interface %s is tentative", ra->p.name, a->ip, a->iface->name);
+      return;
+    }
+    else
+    {
+      if (a->iface->flags & IF_IGNORE)
+	return;
+
+      if (flags & IF_CHANGE_UP)
+      {
+	struct radv_iface_config *ic = (struct radv_iface_config *)
+	  iface_patt_find(&cf->patt_list, a->iface, NULL);
+
+	if (ic)
+	  radv_iface_new(ra, a, ic);
+
+	return;
+      }
+    }
 
   struct radv_iface *ifa = radv_iface_find(ra, a->iface);
 
@@ -395,7 +391,15 @@ radv_reconfigure(struct proto *p, struct proto_config *c)
     }
 
     if (!ifa && ic)
-      radv_iface_new(ra, iface, ic);
+    {
+      struct ifa *a;
+      WALK_LIST(a, iface->addrs)
+	if ((a->scope == SCOPE_LINK) && !(a->flags & IA_TENTATIVE))
+	{
+	  radv_iface_new(ra, a, ic);
+	  break;
+	}
+    }
   }
 
   return 1;

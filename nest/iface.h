@@ -53,6 +53,7 @@ struct iface {
 #define IA_SECONDARY 0x20000		/* This address has been reported as secondary by the kernel */
 #define IA_PEER 0x40000			/* A peer/ptp address */
 #define IA_HOST 0x80000			/* A host/loopback address */
+#define IA_TENTATIVE 0x100000		/* This address is tentative (IPv6 only) */
 #define IA_FLAGS 0xff0000
 
 /*
