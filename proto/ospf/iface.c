@@ -1201,7 +1201,7 @@ ospf_reconfigure_ifaces3(struct ospf_proto *p)
 
     WALK_LIST(a, iface->addrs)
     {
-      if (a->flags & IA_SECONDARY)
+      if (a->flags & (IA_SECONDARY | IA_TENTATIVE))
 	continue;
 
       if (a->scope != SCOPE_LINK)

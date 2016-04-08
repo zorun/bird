@@ -750,10 +750,57 @@ rip_reconfigure_ifaces(struct rip_proto *p, struct rip_config *cf)
     if (ifa && !ic)
       rip_remove_iface(p, ifa);
 
+#ifdef IPV6
+    if (!ifa && ic)
+    {
+      struct ifa *a;
+      WALK_LIST(a, iface->addrs)
+	if ((a->scope == SCOPE_LINK) && !(a->flags & IA_TENTATIVE))
+	{
+	  rip_add_iface(p, iface, ic);
+	  break;
+	}
+    }
+#else
     if (!ifa && ic)
       rip_add_iface(p, iface, ic);
+#endif
+
   }
 }
+
+#ifdef IPV6
+static void
+rip_ifa_notify(struct proto *P, unsigned flags, struct ifa *a)
+{
+  struct rip_proto *p = (struct rip_proto *) P;
+  struct rip_config *cf = (void *) P->cf;
+
+  if (a->iface->flags & IF_IGNORE)
+    return;
+
+  if (a->scope == SCOPE_LINK)
+  {
+    struct rip_iface *ifa = rip_find_iface(p, a->iface);
+
+    if (!ifa && (flags & IF_CHANGE_UP))
+    {
+      if (a->flags & IA_TENTATIVE)
+	log(L_WARN "%s: Link-local addr %I is tentative", p->p.name, a->ip);
+      else
+      {
+	struct rip_iface_config *ic = (void *) iface_patt_find(&cf->patt_list, a->iface, NULL);
+	if (ic)
+	  rip_add_iface(p, a->iface, ic);
+      }
+      return;
+    }
+
+    if (ifa && (flags & IF_CHANGE_DOWN))
+      rip_remove_iface(p, ifa);
+  }
+}
+#endif
 
 static void
 rip_if_notify(struct proto *P, unsigned flags, struct iface *iface)
@@ -764,6 +811,7 @@ rip_if_notify(struct proto *P, unsigned flags, struct iface *iface)
   if (iface->flags & IF_IGNORE)
     return;
 
+#ifndef IPV6
   if (flags & IF_CHANGE_UP)
   {
     struct rip_iface_config *ic = (void *) iface_patt_find(&cf->patt_list, iface, NULL);
@@ -773,6 +821,7 @@ rip_if_notify(struct proto *P, unsigned flags, struct iface *iface)
 
     return;
   }
+#endif
 
   struct rip_iface *ifa = rip_find_iface(p, iface);
 
@@ -1089,6 +1138,9 @@ rip_init(struct proto_config *cfg)
 
   P->accept_ra_types = RA_OPTIMAL;
   P->if_notify = rip_if_notify;
+#ifdef IPV6
+  P->ifa_notify = rip_ifa_notify;
+#endif
   P->rt_notify = rip_rt_notify;
   P->neigh_notify = rip_neigh_notify;
   P->import_control = rip_import_control;
