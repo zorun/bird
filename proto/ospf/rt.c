@@ -671,7 +671,7 @@ link_back(struct ospf_area *oa, struct top_hash_entry *en, struct top_hash_entry
      which may be later used as the next hop. */
 
   /* In OSPFv2, en->lb is set here. In OSPFv3, en->lb is just cleared here,
-     it is set in process_prefixes() to any global addres in the area */
+     it is set in process_prefixes() to any global address in the area */
 
   en->lb = IPA_NONE;
   en->lb_id = 0;
@@ -923,7 +923,7 @@ ospf_rt_sum_tr(struct ospf_area *oa)
   }
 }
 
-/* Decide about originating or flushing summary LSAs for condended area networks */
+/* Decide about originating or flushing summary LSAs for condensed area networks */
 static int
 decide_anet_lsa(struct ospf_area *oa, struct area_net *anet, struct ospf_area *anet_oa)
 {
@@ -1921,7 +1921,7 @@ rt_sync(struct ospf_proto *p)
   /* This is used for forced reload of routes */
   int reload = (p->calcrt == 2);
 
-  OSPF_TRACE(D_EVENTS, "Starting routing table synchronisation");
+  OSPF_TRACE(D_EVENTS, "Starting routing table synchronization");
 
   DBG("Now syncing my rt table with nest's\n");
   FIB_ITERATE_INIT(&fit, fib);

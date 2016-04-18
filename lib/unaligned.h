@@ -19,6 +19,7 @@
 
 #include "lib/endian.h"
 #include "lib/string.h"
+#include <netinet/in.h>
 
 static inline u16
 get_u16(const void *p)

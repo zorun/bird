@@ -41,11 +41,26 @@ sysconfdir=@sysconfdir@
 localstatedir=@localstatedir@
 docdir=@prefix@/doc
 
+
+tests_sources := $(wildcard $(srcdir)/$(dir-name)/*_test.c)
+tests_executables := $(notdir $(basename $(tests_sources)))
+
+tests: $(tests_executables)
+
+%_test.o: $(srcdir)/$(dir-name)/%_test.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+test-dep := $(addprefix $(root-rel), $(addsuffix /all.o, $(static-dirs)) conf/all.o lib/birdlib.a)
+
+%_test: $(srcdir)/$(dir-name)/%_test.o $(root-rel)test/all.o $(test-dep)
+	$(CC) $(LDFLAGS) $^ $(LIBS) -o $@
+
 ifdef source
 
 objs := $(subst .c,.o,$(source))
 
-ifdef dir-name
+
+ifndef dynamic-dir
 src-path := $(srcdir)/$(dir-name)/
 endif
 
@@ -82,7 +97,7 @@ source-dep := $(source)
 endif
 
 depend:
-	$(CC) $(CPPFLAGS) -MM $(addprefix $(src-path),$(source-dep)) >depend
+	$(CC) $(CPPFLAGS) -MM $(addprefix $(src-path),$(source-dep)) $(tests_sources) >depend
 
 ifneq ($(wildcard depend),)
 include depend

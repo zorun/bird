@@ -3,13 +3,16 @@
 
 objdir=@objdir@
 
-all depend tags install install-docs:
+all depend tags install install-docs tests:
 	$(MAKE) -C $(objdir) $@
 
 docs userdocs progdocs:
 	$(MAKE) -C doc $@
 
-clean:
+check: tests
+	tools/run_tests.sh "@objdir@" "@srcdir@"
+
+clean: clean-tests
 	$(MAKE) -C $(objdir) clean
 	find . -name "*~" -or -name "*.[oa]" -or -name "\#*\#" -or -name TAGS -or -name core -or -name depend -or -name ".#*" | xargs rm -f
 
@@ -18,3 +21,7 @@ distclean: clean
 	rm -rf $(objdir) autom4te.cache
 	rm -f config.* configure sysdep/autoconf.h sysdep/paths.h Makefile
 
+clean-tests:
+	find . -name '*_test' | xargs rm -f
+	find . -name '*_test.o' | xargs rm -f
+	rm -f $(objdir)/test/*.o

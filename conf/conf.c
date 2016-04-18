@@ -49,12 +49,9 @@
 #include "nest/route.h"
 #include "nest/protocol.h"
 #include "nest/iface.h"
-#include "lib/resource.h"
-#include "lib/string.h"
 #include "lib/event.h"
-#include "lib/timer.h"
 #include "conf/conf.h"
-#include "filter/filter.h"
+
 
 static jmp_buf conf_jmpbuf;
 

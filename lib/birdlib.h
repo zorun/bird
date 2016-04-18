@@ -11,6 +11,8 @@
 
 #include "timer.h"
 #include "alloca.h"
+#include "lib/null.h"
+#include "sysdep/config.h"
 
 /* Ugly structure offset handling macros */
 
@@ -55,7 +57,6 @@ static inline int u64_cmp(u64 i1, u64 i2)
 #ifndef NULL
 #define NULL ((void *) 0)
 #endif
-
 
 /* Macros for gcc attributes */
 
