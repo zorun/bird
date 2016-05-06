@@ -1171,8 +1171,8 @@ bgp_set_next_hop(struct bgp_proto *p, rta *a)
 	return 0;
 
       a->dest = RTD_ROUTER;
-      a->gw = ng->addr;
-      a->iface = ng->iface;
+      a->nh.gw = ng->addr;
+      a->nh.iface = ng->iface;
       a->hostentry = NULL;
       a->igp_metric = 0;
     }
