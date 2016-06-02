@@ -312,7 +312,15 @@ log_init_debug(char *f)
   else if (!*f)
     dbgf = stderr;
   else if (!(dbgf = fopen(f, "a")))
-    log(L_ERR "Error opening debug file `%s': %m", f);
+  {
+    if (current_log_list)
+      log(L_ERR "Error opening debug file `%s': %m", f);
+    else
+    {
+      fprintf(stderr, "Error opening debug file `%s': %m\n", f);
+      exit(1);
+    }
+  }
   if (dbgf)
     setvbuf(dbgf, NULL, _IONBF, 0);
 }
