@@ -71,7 +71,6 @@ static_install(struct proto *p, struct static_route *r, struct iface *ifa)
   a.src = p->main_source;
   a.source = ((r->dest == RTD_UNICAST) && ipa_zero(r->via)) ? RTS_STATIC_DEVICE : RTS_STATIC;
   a.scope = SCOPE_UNIVERSE;
-  a.cast = RTC_UNICAST;
   a.dest = r->dest;
   if (r->dest == RTD_UNICAST)
     {
