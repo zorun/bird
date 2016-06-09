@@ -3634,19 +3634,16 @@ that the autonomous system announcing an IP address prefix is in fact
 authorized to do so. This is not crypto checked so can be violated. But it
 should prevent the vast majority of accidental hijackings on the Internet
 today, e.g. the famous Pakastani accidental announcement of YouTube's address
-space. The RPKI protocol receives and maintains a list of ROAs from remote
-cache server (also called validator) (RFC 6810). Then you can validate routes
-using function <cf/roa_check/ and setting a import filter at the BGP protocol.
-We should re-validate all of affected routes after RPKI update, but we don't
-support it. You can use a BIRD client command <cf/reload in <protocol>/ for
-manual revalidation of all routes.
+space.
 
-<sect1>Configuration
+<p>The RPKI protocol receives and maintains a list of ROAs from remote cache
+server (also called validator) (RFC 6810). Then you can validate routes using
+function <cf/roa_check()/ and setting a import filter at the BGP protocol. We
+should re-validate all of affected routes after RPKI update (RFC 6811), but we
+don't support it yet! You can use a BIRD client command <cf>reload in
+<m/bgp_protocol_name/</cf> for manual call of revalidation of all routes.
 
-We currently support at most one remote cache server per protocol.
-However you can define more RPKI protocols than one in the same time.
-
-Also note that BIRD supports two types of RPKI transports:
+<sect1>Supported transports
 <itemize>
         <item>Unprotected transport over TCP using a port 323. The cache server
         and BIRD router should be on the same trusted and controlled network
@@ -3655,8 +3652,15 @@ Also note that BIRD supports two types of RPKI transports:
         22.
 </itemize>
 
+<sect1>Configuration
+
+<p>We currently support just one cache server per protocol. However you can
+define more RPKI protocols generally.
+
 <code>
 protocol rpki [&lt;name&gt;] {
+        roa4 { table &lt;tab&gt;; };
+        roa6 { table &lt;tab&gt;; };
         remote &lt;ip&gt; | "&lt;domain&gt;" [port &lt;num&gt;];
         port &lt;num&gt;;
         refresh [keep] &lt;num&gt;;
@@ -3671,66 +3675,70 @@ protocol rpki [&lt;name&gt;] {
 }
 </code>
 
+<p>Alse note that you have to specify ROA table into which will be imported
+routes from a cache server. If you want to import only IPv4 prefixes you have
+to specify only roa4 table. Similarly with IPv6 prefixes only. If you want to
+fetch both IPv4 and even IPv6 ROAs you have to specify both types of ROA
+tables.
+
 <sect2>RPKI protocol options
+
 <descrip>
-	<tag>roa table <m/name/</tag>
-	Specifies the roa table into which will import the routes from cache.
-	This option is required.
+        <tag>remote <m/ip/ | "<m/hostname/" [port <m/num/]</tag> Specifies
+        a destination address of the cache server.  Can be specified by an IP
+        address or by full domain name string.  Only one cache can be specified
+        per protocol. This option is required.
 
-	<tag>remote <m/ip/ | "<m/hostname/" [port &lt;num&gt;]</tag>
-	Specifies a destination address of the cache server.
-	Can be specified by an IP address or by full domain name.
-	Only one cache can be specified per protocol.
+        <tag>port <m/num/</tag> Specifies the port number. The default port
+        number is 323 for transport without any encryption and 22 for transport
+        with SSH encryption.
 
-	<tag>port <m/num/</tag>
-	Specifies the port number.
-	The default port number is 323 for transport without any encryption
-	and 22 for transport with SSH encryption.
+        <tag>refresh [keep] <m/num/</tag> Time period in seconds. Tells how
+        long to wait before next attempting to poll the cache, using a Serial
+        Query or a Reset Query packet. Must be lower than 86400 seconds (one
+        day). A keyword <cf/keep/ suppresses updating this value by a
+        cache server.
+        Default: 3600 seconds
 
-	<tag>refresh [keep] <m/num/</tag>
-	Time period in seconds. Tells how long to wait before next attempting
-	to poll the cache, using a Serial Query or a Reset Query PDU. Must be
-	lower than 1 hour.  You	can supress retry time update from cache server
-	using keyword <cf/keep/.
-	Default: 3600 seconds
+        <tag>retry [keep] <m/num/</tag> Time period in seconds between a failed
+        query and a next attempt.  Maximum allowed value is 7200 seconds (two
+        hours). A keyword <cf/keep/ suppresses updating this value by a
+        cache server.
+        Default: 600 seconds
 
-	<tag>retry [keep] <m/num/</tag>
-	Time period in seconds between a failed query and the next attempt. You
-	can supress retry time update from cache server using keyword <cf/keep/.
-	Default: 600 seconds
+        <tag>expire [keep] <m/num/</tag> Time period in seconds. Received
+        records are deleted if the client was unable to successfully refresh
+        data for this time period.  Must be in range from 600 seconds (ten
+        minutes) to 172800 seconds (two days).  A keyword <cf/keep/
+        suppresses updating this value by a cache server.
+        Default: 7200 seconds
 
-	<tag>expire [keep] <m/num/</tag>
-	Time period in seconds. Received records are deleted if the client was
-	unable to refresh data for this time period. You can supress retry time
-	update from cache server using keyword <cf/keep/.
-	Default: 7200 seconds
+        <tag>transport tcp</tag> Unprotected transport over TCP. It's a default
+        transport. Should be used only on secure private networks.
+        Default: tcp
 
-	<tag>transport tcp</tag>
-	Unprotected transport over TCP. It's a default transport. Should be used
-	only on secure local private networks.
-	Default: tcp
-
-	<tag>transport ssh { <m/SSH transport options.../ }</tag>
-	It enables a SSHv2 transport encryption.
-	Default: off
+        <tag>transport ssh { <m/SSH transport options.../ }</tag> It enables a
+        SSHv2 transport encryption. Cannot be combined with a TCP transport.
+        Default: off
 </descrip>
 
-<sect1>SSH transport options
+<sect3>SSH transport options
 <descrip>
-	<tag>bird private key "<m///path/to/id_rsa"</tag>
+	<tag>bird private key "<m>/path/to/id_rsa</m>"</tag>
 	A path to the BIRD's private SSH key for authentication.
-	It can be a <cf/id_rsa/ file.
+	It can be a <cf><m>id_rsa</m></cf> file.
 
-	<tag>remote public key "<m///path/to/known_host"</tag>
+	<tag>remote public key "<m>/path/to/known_host</m>"</tag>
 	A path to the cache's public SSH key for verification identity
-	of the cache server. It could be a <cf/known_host/ file.
+	of the cache server. It could be a path to <cf><m>known_host</m></cf> file.
 
 	<tag>user "<m/name/"</tag>
 	A SSH user name for authentication. This option is a required.
 </descrip>
 
 <sect1>Examples
-<p>A RPKI configuration with BGP origin validation: don't import <cf/INVALID/ routes.
+<sect2>BGP origin validation
+<p>Policy: Don't import <cf/ROA_INVALID/ routes.
 <code>
 roa4 table r4;
 roa6 table r6;
@@ -3739,6 +3747,8 @@ protocol rpki {
 	debug all;
 	roa4 { table r4; };
 	roa6 { table r6; };
+
+	# Please, do not use rpki-validator.realmv6.org in production
 	remote "rpki-validator.realmv6.org" port 8282;
 }
 
@@ -3760,7 +3770,7 @@ protocol bgp {
 }
 </code>
 
-<p>A configuration using SSHv2 transport encryption:
+<sect2>SSHv2 transport encryption
 <code>
 roa4 table r4;
 roa6 table r6;
@@ -3770,7 +3780,7 @@ protocol rpki {
 	roa4 { table r4; };
 	roa6 { table r6; };
 	remote 127.0.0.1 port 2345;
-	ssh encryption {
+	transport ssh {
 		bird private key "/home/birdgeek/.ssh/id_rsa";
 		remote public key "/home/birdgeek/.ssh/known_hosts";
 		user "birdgeek";
