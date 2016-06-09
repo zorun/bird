@@ -768,7 +768,7 @@ rpki_handle_prefix_pdu(struct rpki_cache *cache, const void *pdu)
 
   default:
   {
-    const char *txt = "Prefix PDU with invalid flags value received";
+    const char txt[] = "Prefix PDU with invalid flags value received";
     size_t pdu_size = (type == IPV4_PREFIX ? sizeof(struct pdu_ipv4) : sizeof(struct pdu_ipv6));
     CACHE_DBG(cache, "%s", txt);
     rpki_send_error_pdu(cache, pdu, pdu_size, CORRUPT_DATA, txt, sizeof(txt));
