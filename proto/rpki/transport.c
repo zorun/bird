@@ -16,13 +16,18 @@
 #include "transport.h"
 #include "sysdep/unix/unix.h"
 
-/*
- * Fulfill sock->af and sock->daddr if sock->daddr is empty and hostname is defined
- * Return TR_SUCCESS or TR_ERROR
+/**
+ * rpki_hostname_autoresolv - Auto-resolve a IP address from a hostname
+ * @sk: bird socket
+ *
+ * Fills daddr and subtype. Returns TR_ERROR or TR_SUCCESS.
  */
 static int
 rpki_hostname_autoresolv(sock *sk)
 {
+  if (ipa_zero(sk->daddr) && sk->host == NULL)
+    return TR_ERROR;
+
   if (ipa_zero(sk->daddr) && sk->host)
   {
     struct addrinfo *res;
@@ -41,10 +46,14 @@ rpki_hostname_autoresolv(sock *sk)
       return TR_ERROR;
     }
 
-    if (res->ai_family == AF_INET)
-      sk->fam = SK_FAM_IPV4;
-    else
-      sk->fam = SK_FAM_IPV6;
+    switch (res->ai_family)
+    {
+    case AF_INET:
+      sk->subtype = SK_IPV4;
+      break;
+    default:
+      sk->subtype = SK_IPV6;
+    }
 
     sockaddr sa = {
 	.sa = *res->ai_addr,
@@ -55,10 +64,8 @@ rpki_hostname_autoresolv(sock *sk)
 
     freeaddrinfo(res);
   }
-  else if (ipa_zero(sk->daddr) && !sk->host)
-    return TR_ERROR;
   else
-    sk->fam = ip6_is_v4mapped(sk->daddr) ? SK_FAM_IPV4 : SK_FAM_IPV6;
+    sk->subtype = ipa_is_ip4(sk->daddr) ? SK_IPV4 : SK_IPV6;
 
   return TR_SUCCESS;
 }
@@ -83,6 +90,7 @@ rpki_tr_open(struct rpki_tr_sock *tr)
   sk->daddr = cf->ip;
   sk->dport = cf->port;
   sk->host = cf->hostname;
+  sk->type = SK_IP;
   sk->rbsize = RPKI_RX_BUFFER_SIZE;
   sk->tbsize = RPKI_TX_BUFFER_SIZE;
   sk->tos = IP_PREC_INTERNET_CONTROL;
