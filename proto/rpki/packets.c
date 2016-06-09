@@ -381,6 +381,7 @@ rpki_log_packet(struct rpki_cache *cache, const void *pdu, const size_t len, con
   }
 
   case ROUTER_KEY:
+    /* We don't support saving of Router Key PDUs yet */
     bsnprintf(detail, sizeof(detail), "(ignored)");
     break;
 
@@ -476,7 +477,7 @@ rpki_check_receive_packet(struct rpki_cache *cache, const void *pdu, const size_
   memcpy(&header, pdu, sizeof(header));
   rpki_pdu_header_to_host_byte_order(&header);
 
-  /* Do not handle error PDUs here, leave this task to rtr_handle_error_pdu() */
+  /* Do not handle error PDUs here, leave this task to rpki_handle_error_pdu() */
   if (header.ver != cache->version && header.type != ERROR)
   {
     /* If this is the first PDU we have received */
@@ -655,17 +656,15 @@ rpki_handle_serial_notify_pdu(struct rpki_cache *cache, const struct pdu_serial_
    * Protocol Version field in the Serial Notify PDU.
    * (https://tools.ietf.org/html/draft-ietf-sidr-rpki-rtr-rfc6810-bis-07#section-7)
    */
-  if (cache->serial_num == 0)
+  if (cache->request_session_id)
   {
-    CACHE_TRACE(D_PACKETS, cache, "Ignore a serial notify PDU during initial start-up period");
+    CACHE_TRACE(D_PACKETS, cache, "Ignore a Serial Notify packet during initial start-up period");
     return;
   }
 
   /* XXX Serial number should be compared using method RFC 1982 (3.2) */
   if (cache->serial_num != pdu->serial_num)
     rpki_cache_change_state(cache, RPKI_CS_SYNC);
-  else
-    CACHE_TRACE(D_PACKETS, cache, "Too low serial number in serial notify PDU %u, actual serial number is %u", pdu->serial_num, cache->serial_num);
 }
 
 static int
