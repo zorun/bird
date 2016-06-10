@@ -1772,7 +1772,7 @@ static inline rte *
 rt_next_hop_update_rte(rtable *tab, rte *old)
 {
   rta a;
-  memcpy(&a, old->attrs, sizeof(rta));
+  memcpy(&a, old->attrs, rta_size(old->attrs));
   rta_apply_hostentry(&a, old->attrs->hostentry);
   a.aflags = 0;
 

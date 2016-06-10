@@ -88,6 +88,7 @@ static_install(struct proto *p, struct static_route *r, struct iface *ifa)
 	    nh->gw = r2->via;
 	    nh->iface = r2->neigh->iface;
 	    nh->weight = r2->weight;
+	    nh->labels = 0;
 	    nh->next = NULL;
 	    if (nhp)
 	      nhp->next = nh;
