@@ -502,6 +502,7 @@ ea_list *ea_append(ea_list *to, ea_list *what);
 void ea_format_bitfield(struct eattr *a, byte *buf, int bufsize, const char **names, int min, int max);
 
 #define NEXTHOP_MAX_LABEL_STACK 8
+#define NEXTHOP_MAX_SIZE (sizeof(struct nexthop) + sizeof(u32)*NEXTHOP_MAX_LABEL_STACK)
 
 static inline size_t nexthop_size(const struct nexthop *nh)
 { return sizeof(struct nexthop) + sizeof(u32)*nh->labels; }
@@ -514,6 +515,7 @@ static inline void nexthop_link(struct rta *a, struct nexthop *from)
 
 void rta_init(void);
 static inline size_t rta_size(const rta *a) { return sizeof(rta) + sizeof(u32)*a->nh.labels; }
+#define RTA_MAX_SIZE (sizeof(rta) + sizeof(u32)*NEXTHOP_MAX_LABEL_STACK)
 rta *rta_lookup(rta *);			/* Get rta equivalent to this one, uc++ */
 static inline int rta_is_cached(rta *r) { return r->aflags & RTAF_CACHED; }
 static inline rta *rta_clone(rta *r) { r->uc++; return r; }
