@@ -84,21 +84,11 @@ enum ssh_options_e {
 };
 
 enum {
-  /** No logging at all
-   */
-  SSH_LOG_NOLOG=0,
-  /** Only warnings
-   */
-  SSH_LOG_WARNING,
-  /** High level protocol information
-   */
-  SSH_LOG_PROTOCOL,
-  /** Lower level protocol infomations, packet level
-   */
-  SSH_LOG_PACKET,
-  /** Every function path
-   */
-  SSH_LOG_FUNCTIONS
+  SSH_LOG_NOLOG=0,		/* No logging at all */
+  SSH_LOG_WARNING,		/* Only warnings */
+  SSH_LOG_PROTOCOL,		/* High level protocol information */
+  SSH_LOG_PACKET,		/* Lower level protocol informations, packet level */
+  SSH_LOG_FUNCTIONS		/* Every function path */
 };
 
 #ifndef socket_t

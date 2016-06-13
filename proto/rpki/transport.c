@@ -70,9 +70,11 @@ rpki_hostname_autoresolv(sock *sk)
   return TR_SUCCESS;
 }
 
-/*
- * Establish the connection.
- * Returns TR_SUCCESS or TR_ERROR
+/**
+ * rpki_tr_open - Establish a network connection
+ * @tr:
+ *
+ * Returns TR_SUCCESS or TR_ERROR.
  */
 int
 rpki_tr_open(struct rpki_tr_sock *tr)
@@ -84,6 +86,7 @@ rpki_tr_open(struct rpki_tr_sock *tr)
   tr->sk = sk_new(cache->pool);
   sock *sk = tr->sk;
 
+  sk->type = -1; /* must be set in the specific transport layer in tr_open() */
   sk->tx_hook = rpki_connected_hook;
   sk->err_hook = rpki_err_hook;
   sk->data = cache;
@@ -93,7 +96,6 @@ rpki_tr_open(struct rpki_tr_sock *tr)
   sk->rbsize = RPKI_RX_BUFFER_SIZE;
   sk->tbsize = RPKI_TX_BUFFER_SIZE;
   sk->tos = IP_PREC_INTERNET_CONTROL;
-  sk->type = -1; /* must be set in the specific transport layer in tr_open() */
   rpki_hostname_autoresolv(sk);
 
   return tr->open_fp(tr);

@@ -543,7 +543,7 @@ error:
   {
   case CORRUPT_DATA:
   {
-    const char *txt = "Corrupt data received, length value in PDU is too small";
+    const char txt[] = "Corrupt data received, length value in PDU is too small";
     CACHE_TRACE(D_PACKETS, cache, "%s", txt);
     rpki_send_error_pdu(cache, pdu, sizeof(header), CORRUPT_DATA, txt, sizeof(txt));
     break;
@@ -551,10 +551,10 @@ error:
 
   case PDU_TOO_BIG:
   {
-    char txt2[64];
-    bsnprintf(txt2, sizeof(txt2),"PDU too big, max. PDU size is: %u bytes", RPKI_PDU_MAX_LEN);
-    CACHE_TRACE(D_EVENTS, cache, "%s", txt2);
-    rpki_send_error_pdu(cache, pdu, sizeof(header), CORRUPT_DATA, txt2, strlen(txt2)+1);
+    char txt[64];
+    bsnprintf(txt, sizeof(txt),"PDU too big, max. PDU size is: %u bytes", RPKI_PDU_MAX_LEN);
+    CACHE_TRACE(D_PACKETS, cache, "%s", txt);
+    rpki_send_error_pdu(cache, pdu, sizeof(header), CORRUPT_DATA, txt, strlen(txt)+1);
     break;
   }
 
@@ -564,7 +564,7 @@ error:
     break;
 
   case UNSUPPORTED_PROTOCOL_VER:
-    CACHE_TRACE(D_EVENTS, cache, "PDU with unsupported Protocol version received");
+    CACHE_TRACE(D_PACKETS, cache, "PDU with unsupported Protocol version received");
     rpki_send_error_pdu(cache, pdu, header.len, UNSUPPORTED_PROTOCOL_VER, NULL, 0);
     break;
 
@@ -640,7 +640,7 @@ rpki_handle_error_pdu(struct rpki_cache *cache, const void *buf)
     break;
 
   default:
-    CACHE_TRACE(D_PACKETS, cache, "error unknown, server sent unsupported error code %u", pdu->error_code);
+    CACHE_TRACE(D_PACKETS, cache, "Error unknown, server sent unsupported error code %u", pdu->error_code);
     rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
     break;
   }
@@ -967,14 +967,14 @@ rpki_err_hook(struct birdsock *sk, int error_num)
 {
   struct rpki_cache *cache = sk->data;
 
-  if (error_num && sk->err == NULL)
-  {
-    CACHE_TRACE(D_EVENTS, cache, "Lost connection: %M", error_num);
-  }
-  else
-  {
+  /* zero means EOF */
+  if (!error_num)
+    return;
+
+  if (sk->err)
     CACHE_TRACE(D_EVENTS, cache, "Lost connection: %s", sk->err);
-  }
+  else
+    CACHE_TRACE(D_EVENTS, cache, "Lost connection: %M", error_num);
 
   rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
 }

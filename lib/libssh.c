@@ -15,6 +15,11 @@
 
 #define FILENAME_OF_SHARED_OBJECT_LIBSSH "libssh.so"
 
+struct ssh_function {
+  void **fn;
+  const char *name;
+};
+
 ssh_session (*ssh_new)(void);
 void (*ssh_set_blocking)(ssh_session session, int blocking);
 int (*ssh_options_set)(ssh_session session, enum ssh_options_e type, const void *value);
@@ -38,12 +43,39 @@ int (*ssh_channel_is_eof)(ssh_channel channel);
 int (*ssh_channel_select)(ssh_channel *readchans, ssh_channel *writechans, ssh_channel *exceptchans, struct timeval * timeout);
 int (*ssh_channel_write)(ssh_channel channel, const void *data, uint32_t len);
 
+#define SSH_FN(x) { .fn = (void **) &x, .name = #x }
+static struct ssh_function all_ssh_fn[] = {
+    SSH_FN(ssh_new),
+    SSH_FN(ssh_set_blocking),
+    SSH_FN(ssh_options_set),
+    SSH_FN(ssh_connect),
+    SSH_FN(ssh_get_fd),
+    SSH_FN(ssh_is_server_known),
+    SSH_FN(ssh_userauth_publickey_auto),
+    SSH_FN(ssh_get_error),
+    SSH_FN(ssh_get_error_code),
+    SSH_FN(ssh_disconnect),
+    SSH_FN(ssh_free),
+    SSH_FN(ssh_channel_new),
+    SSH_FN(ssh_channel_is_open),
+    SSH_FN(ssh_channel_close),
+    SSH_FN(ssh_channel_free),
+    SSH_FN(ssh_channel_open_session),
+    SSH_FN(ssh_channel_request_subsystem),
+    SSH_FN(ssh_channel_read_nonblocking),
+    SSH_FN(ssh_channel_is_eof),
+    SSH_FN(ssh_channel_select),
+    SSH_FN(ssh_channel_write),
+};
+#undef SSH_FN
 
 static void *libssh;
 
-/*
- * @return NULL if success
- * @return string with error if failed
+/**
+ * load_libssh - Prepare all ssh_* functions
+ *
+ * Initialize for use all ssh_* functions. Returns normally NULL.
+ * If an error occurs then returns static string with the error description.
  */
 const char *
 load_libssh(void)
@@ -62,89 +94,13 @@ load_libssh(void)
 
   dlerror(); /* Clear any existing error */
 
-  ssh_new = (ssh_session (*)(void)) dlsym(libssh, "ssh_new");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_set_blocking = (void (*)(ssh_session, int)) dlsym(libssh, "ssh_set_blocking");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_options_set = (int (*)(ssh_session, enum ssh_options_e, const void *)) dlsym(libssh, "ssh_options_set");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_connect = (int (*)(ssh_session)) dlsym(libssh, "ssh_connect");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_get_fd = (socket_t (*)(ssh_session)) dlsym(libssh, "ssh_get_fd");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_is_server_known = (int (*)(ssh_session)) dlsym(libssh, "ssh_is_server_known");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_userauth_publickey_auto = (int (*)(ssh_session, const char *, const char *)) dlsym(libssh, "ssh_userauth_publickey_auto");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_get_error = (const char * (*)(void *)) dlsym(libssh, "ssh_get_error");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_get_error_code = (int (*)(void *)) dlsym(libssh, "ssh_get_error_code");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_disconnect = (void (*)(ssh_session)) dlsym(libssh, "ssh_disconnect");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_free = (void (*)(ssh_session)) dlsym(libssh, "ssh_free");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_channel_new = (ssh_channel (*)(ssh_session)) dlsym(libssh, "ssh_channel_new");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_channel_is_open = (int (*)(ssh_channel)) dlsym(libssh, "ssh_channel_is_open");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_channel_close = (int (*)(ssh_channel)) dlsym(libssh, "ssh_channel_close");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_channel_free = (void (*)(ssh_channel)) dlsym(libssh, "ssh_channel_free");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_channel_open_session = (int (*)(ssh_channel)) dlsym(libssh, "ssh_channel_open_session");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_channel_request_subsystem = (int (*)(ssh_channel, const char *)) dlsym(libssh, "ssh_channel_request_subsystem");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_channel_read_nonblocking = (int (*)(ssh_channel, void *, uint32_t, int)) dlsym(libssh, "ssh_channel_read_nonblocking");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_channel_is_eof = (int (*)(ssh_channel)) dlsym(libssh, "ssh_channel_is_eof");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_channel_select = (int (*)(ssh_channel *, ssh_channel *, ssh_channel *, struct timeval *)) dlsym(libssh, "ssh_channel_select");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
-
-  ssh_channel_write = (int (*)(ssh_channel, const void *, uint32_t)) dlsym(libssh, "ssh_channel_write");
-  if ((err_buf = dlerror()) != NULL)
-    return err_buf;
+  for (int i = 0; i < sizeof(all_ssh_fn)/sizeof(all_ssh_fn[0]); i++)
+  {
+    *all_ssh_fn[i].fn = (void *) dlsym(libssh, all_ssh_fn[i].name);
+    err_buf = dlerror();
+    if (err_buf)
+      return err_buf;
+  }
 
   return NULL;
 }
