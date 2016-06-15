@@ -269,6 +269,7 @@ rpki_close_connection(struct rpki_cache *cache)
 {
   CACHE_TRACE(D_EVENTS, cache, "Closing a connection");
   rpki_tr_close(cache->tr_sock);
+  proto_notify_state(&cache->p->p, PS_START);
 }
 
 /**
@@ -707,7 +708,7 @@ rpki_start(struct proto *P)
 
   rpki_reconfigure_proto(p, cf, NULL);
 
-  return PS_UP;
+  return PS_START;
 }
 
 static void

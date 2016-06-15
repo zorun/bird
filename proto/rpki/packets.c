@@ -1009,6 +1009,7 @@ rpki_connected_hook(sock *sk)
   struct rpki_cache *cache = sk->data;
 
   CACHE_TRACE(D_EVENTS, cache, "Connected");
+  proto_notify_state(&cache->p->p, PS_UP);
 
   sk->rx_hook = rpki_rx_hook;
   sk->tx_hook = rpki_tx_hook;
