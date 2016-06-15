@@ -674,18 +674,15 @@ rpki_handle_cache_response_pdu(struct rpki_cache *cache, const struct pdu_cache_
   {
     if (cache->last_update != 0)
     {
-      /*
-       * This point is before import new records from remote cache.
-       * If this isn't the first sync, but we already received records,
-       * delete old records and be ready for receive new records.
-       */
+      /* This point is before a importing of new records from remote cache server.
+         This isn't the first sync and we already received records.
+         So start a refresh cycle and receive new records. */
       if (cache->roa4_channel)
 	rt_refresh_begin(cache->roa4_channel->table, cache->roa4_channel);
       if (cache->roa6_channel)
 	rt_refresh_begin(cache->roa6_channel->table, cache->roa6_channel);
 
       cache->refresh_channels = 1;
-      cache->last_update = 0;
     }
     cache->session_id = pdu->session_id;
     cache->request_session_id = 0;

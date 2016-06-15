@@ -3701,9 +3701,9 @@ tables.
         Default: 3600 seconds
 
         <tag>retry [keep] <m/num/</tag> Time period in seconds between a failed
-        query and a next attempt.  Maximum allowed value is 7200 seconds (two
-        hours). A keyword <cf/keep/ suppresses updating this value by a
-        cache server.
+        Serial/Reset Query and a next attempt.  Maximum allowed value is 7200
+        seconds (two hours). A keyword <cf/keep/ suppresses updating this value
+        by a cache server.
         Default: 600 seconds
 
         <tag>expire [keep] <m/num/</tag> Time period in seconds. Received

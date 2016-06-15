@@ -99,10 +99,17 @@ rpki_get_cache_ident(struct rpki_cache *cache)
  * Timers
  */
 
+/**
+ * rpki_schedule_next_refresh - control a scheduling of downloading data from cache server
+ *
+ * This function is periodically called during &ESTABLISHED or &SYNC* state cache connection.
+ * The first refresh schedule is invoked after receiving a |End of Data| PDU and
+ * has run by some &ERROR is occurred.
+ */
 void
 rpki_schedule_next_refresh(struct rpki_cache *cache)
 {
-  if (cache->state == RPKI_CS_SHUTDOWN)
+  if (cache->state == RPKI_CS_SHUTDOWN || cache->state == RPKI_CS_ERROR_TRANSPORT)
   {
     CACHE_DBG(cache, "Stop refreshing");
     return;
@@ -114,6 +121,13 @@ rpki_schedule_next_refresh(struct rpki_cache *cache)
   tm_start(cache->refresh_timer, time_to_wait);
 }
 
+/**
+ * rpki_schedule_next_retry - control a scheduling of retrying connection to cache server
+ *
+ * This function is periodically called during &ERROR* state cache connection.
+ * The first retry schedule is invoked after any &ERROR* state occurred and
+ * ends by reaching of &ESTABLISHED state again.
+ */
 void
 rpki_schedule_next_retry(struct rpki_cache *cache)
 {
@@ -122,8 +136,6 @@ rpki_schedule_next_retry(struct rpki_cache *cache)
   switch (cache->state)
   {
   case RPKI_CS_ESTABLISHED:
-  case RPKI_CS_SYNC:
-  case RPKI_CS_RESET:
     CACHE_DBG(cache, "Stop retrying connection");
     break;
 
@@ -133,9 +145,22 @@ rpki_schedule_next_retry(struct rpki_cache *cache)
   }
 }
 
+/**
+ * rpki_schedule_next_expire_check - control a expiration of ROA entries
+ *
+ * This function is called after receiving each |End of Data| PDU.
+ * The actual wait interval is calculated dynamically.
+ * The expiration timer is destroyed after purging all ROA entries from tables.
+ */
 void
 rpki_schedule_next_expire_check(struct rpki_cache *cache)
 {
+  if (cache->last_update == 0)
+  {
+    CACHE_DBG(cache, "Stop expiration check");
+    return;
+  }
+
   /* A minimum time to wait is 1 second */
   uint time_to_wait = MAX(((int)cache->expire_interval - (int)(now - cache->last_update)), 1);
 
@@ -218,9 +243,6 @@ static void
 rpki_expire_hook(struct timer *tm)
 {
   struct rpki_cache *cache = tm->data;
-
-  if (cache->last_update == 0)
-    return;
 
   CACHE_DBG(cache, ""); /* Show name of function */
 
