@@ -19,7 +19,6 @@
 #include <unistd.h>
 
 #include "rpki.h"
-#include "tcp_transport.h"
 #include "sysdep/unix/unix.h"
 
 static int
@@ -30,23 +29,9 @@ rpki_tr_tcp_open(struct rpki_tr_sock *tr)
   sk->type = SK_TCP_ACTIVE;
 
   if (sk_open(sk) != 0)
-    return TR_ERROR;
+    return RPKI_TR_ERROR;
 
-  return TR_SUCCESS;
-}
-
-static void
-rpki_tr_tcp_close(struct rpki_tr_sock *tr)
-{
-  struct rpki_tr_tcp *tcp = tr->data;
-
-  if (tcp && tcp->ident != NULL)
-  {
-    mb_free((char *) tcp->ident);
-    tcp->ident = NULL;
-  }
-
-  /* tr->sk is closed in tr_close() */
+  return RPKI_TR_SUCCESS;
 }
 
 static const char *
@@ -56,10 +41,9 @@ rpki_tr_tcp_ident(struct rpki_tr_sock *tr)
 
   struct rpki_cache *cache = tr->cache;
   struct rpki_config *cf = (void *) cache->p->p.cf;
-  struct rpki_tr_tcp *tcp = tr->data;
 
-  if (tcp->ident != NULL)
-    return tcp->ident;
+  if (tr->ident != NULL)
+    return tr->ident;
 
   const char *host = cf->hostname;
   ip_addr ip = cf->ip;
@@ -78,19 +62,17 @@ rpki_tr_tcp_ident(struct rpki_tr_sock *tr)
   else
     bsnprintf(ident, ident_len, "%I:%u", ip, port);
 
-  tcp->ident = ident;
-  return tcp->ident;
+  tr->ident = ident;
+  return tr->ident;
 }
 
-/* Initializes the rpki_tr_sock struct for a TCP connection. */
+/**
+ * rpki_tr_tcp_init - Initializes the RPKI transport structure for a TCP connection
+ * @tr: allocated RPKI transport structure
+ */
 void
 rpki_tr_tcp_init(struct rpki_tr_sock *tr)
 {
-  struct rpki_cache *cache = tr->cache;
-
-  tr->close_fp = &rpki_tr_tcp_close;
   tr->open_fp = &rpki_tr_tcp_open;
   tr->ident_fp = &rpki_tr_tcp_ident;
-
-  tr->data = mb_allocz(cache->pool, sizeof(struct rpki_tr_tcp));
 }

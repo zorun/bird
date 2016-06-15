@@ -220,13 +220,13 @@ rpki_open_connection(struct rpki_cache *cache)
 {
   CACHE_TRACE(D_EVENTS, cache, "Opening a connection");
 
-  if (rpki_tr_open(cache->tr_sock) == TR_ERROR)
+  if (rpki_tr_open(cache->tr_sock) == RPKI_TR_ERROR)
   {
     rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
-    return TR_ERROR;
+    return RPKI_TR_ERROR;
   }
 
-  return TR_SUCCESS;
+  return RPKI_TR_SUCCESS;
 }
 
 static void
@@ -420,7 +420,7 @@ rpki_init_cache(struct rpki_proto *p, struct rpki_config *cf)
   cache->tr_sock = mb_allocz(pool, sizeof(struct rpki_tr_sock));
   cache->tr_sock->cache = cache;
 
-  switch (cf->transport->type)
+  switch (cf->tr_config->type)
   {
   case RPKI_TR_TCP: rpki_tr_tcp_init(cache->tr_sock); break;
   case RPKI_TR_SSH: rpki_tr_ssh_init(cache->tr_sock); break;
@@ -507,15 +507,15 @@ rpki_reconfigure_cache(struct rpki_proto *p, struct rpki_cache *cache, struct rp
     goto hard_cache_replace;
   }
 
-  if (old->transport->type != new->transport->type)
+  if (old->tr_config->type != new->tr_config->type)
   {
     CACHE_TRACE(D_EVENTS, cache, "Transport type changed");
     goto hard_cache_replace;
   }
-  else if ((old->transport->type == new->transport->type) && (new->transport->type == RPKI_TR_SSH))
+  else if ((old->tr_config->type == new->tr_config->type) && (new->tr_config->type == RPKI_TR_SSH))
   {
-    struct rpki_tr_ssh_config *ssh_old = (void *) old->transport;
-    struct rpki_tr_ssh_config *ssh_new = (void *) new->transport;
+    struct rpki_tr_ssh_config *ssh_old = (void *) old->tr_config;
+    struct rpki_tr_ssh_config *ssh_new = (void *) new->tr_config;
     if ((strcmp(ssh_old->bird_private_key, ssh_new->bird_private_key) != 0) ||
 	(strcmp(ssh_old->cache_public_key, ssh_new->cache_public_key) != 0) ||
 	(strcmp(ssh_old->user, ssh_new->user) != 0))
@@ -627,7 +627,7 @@ rpki_show_proto_info(struct proto *P)
 
   if (cache)
   {
-    switch (cf->transport->type)
+    switch (cf->tr_config->type)
     {
     case RPKI_TR_SSH: transport_name = "SSHv2"; break;
     case RPKI_TR_TCP: transport_name = "Unprotected over TCP"; break;
@@ -700,21 +700,21 @@ rpki_check_config(struct rpki_config *cf)
   if (cf->hostname == NULL)
     cf_error("Address or hostname of remote cache server must be set");
 
-  if (cf->transport == NULL)
+  if (cf->tr_config == NULL)
   {
-    cf->transport = cfg_allocz(sizeof(struct rpki_tr_tcp_config));
-    cf->transport->type = RPKI_TR_TCP;
+    cf->tr_config = cfg_allocz(sizeof(struct rpki_tr_tcp_config));
+    cf->tr_config->type = RPKI_TR_TCP;
   }
 
   if (cf->port == 0)
   {
-    switch (cf->transport->type)
+    switch (cf->tr_config->type)
     {
     case RPKI_SSH_PORT:
       cf->port = RPKI_SSH_PORT;
       break;
     default:
-      cf->port = RPKI_PORT;
+      cf->port = RPKI_TCP_PORT;
     }
   }
 }

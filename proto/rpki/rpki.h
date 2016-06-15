@@ -18,11 +18,10 @@
 #include "lib/socket.h"
 #include "lib/ip.h"
 
-#include "ssh_transport.h"
-#include "tcp_transport.h"
+#include "transport.h"
 #include "packets.h"
 
-#define RPKI_PORT		323
+#define RPKI_TCP_PORT		323
 #define RPKI_SSH_PORT		22
 #define RPKI_RETRY_INTERVAL	600
 #define RPKI_REFRESH_INTERVAL	3600
@@ -46,16 +45,16 @@ struct rpki_proto {
 
 struct rpki_config {
   struct proto_config c;
-  const char *hostname;			/* Full domain name of remote cache server */
+  const char *hostname;			/* Full domain name or stringified IP address of cache server */
   ip_addr ip;				/* IP address of remote cache server or IPA_NONE */
-  u16 port;				/* Port of cache server */
-  u32 refresh_interval;			/* Seconds for periodical refresh data from remote cache server */
+  u16 port;				/* Port number of cache server */
+  struct rpki_tr_config *tr_config;	/* Specific transport configuration structure, i.e. rpki_tr_tcp_config or rpki_tr_ssh_config */
+  u32 refresh_interval;			/* Time interval (in seconds) for periodical downloading data from cache server */
   u32 retry_interval;			/* Time interval (in seconds) for an unreachable server */
-  u32 expire_interval;			/* Seconds  */
-  u8 keep_refresh_interval:1;		/* Do not overwrite refresh interval by cache server */
-  u8 keep_retry_interval:1;		/* Do not overwrite retry interval by cache server */
-  u8 keep_expire_interval:1;		/* Do not overwrite expire interval by cache server */
-  struct rpki_tr_config *transport;	/* Specific transport configuration only based on (struct rpki_tr_config *) */
+  u32 expire_interval;			/* Maximal lifetime (in seconds) of ROAs without any successful refreshment */
+  u8 keep_refresh_interval:1;		/* Do not overwrite refresh interval by cache server update */
+  u8 keep_retry_interval:1;		/* Do not overwrite retry interval by cache server update */
+  u8 keep_expire_interval:1;		/* Do not overwrite expire interval by cache server update */
 };
 
 /*

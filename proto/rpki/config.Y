@@ -13,7 +13,7 @@ CF_HDR
 CF_DEFINES
 
 #define RPKI_CFG ((struct rpki_config *) this_proto)
-#define RPKI_CFG_SSH ((struct rpki_tr_ssh_config *) RPKI_CFG->transport)
+#define RPKI_TR_SSH_CFG ((struct rpki_tr_ssh_config *) RPKI_CFG->tr_config)
 
 static void
 rpki_check_unused_hostname(void)
@@ -25,7 +25,7 @@ rpki_check_unused_hostname(void)
 static void
 rpki_check_unused_transport(void)
 {
-  if (RPKI_CFG->transport != NULL)
+  if (RPKI_CFG->tr_config != NULL)
     cf_error("At the most one transport per protocol allowed");
 }
 
@@ -111,15 +111,15 @@ rpki_transport:
 rpki_transport_tcp_init:
 {
   rpki_check_unused_transport();
-  RPKI_CFG->transport = cfg_allocz(sizeof(struct rpki_tr_tcp_config));
-  RPKI_CFG->transport->type = RPKI_TR_TCP;
+  RPKI_CFG->tr_config = cfg_allocz(sizeof(struct rpki_tr_tcp_config));
+  RPKI_CFG->tr_config->type = RPKI_TR_TCP;
 };
 
 rpki_transport_ssh_init:
 {
   rpki_check_unused_transport();
-  RPKI_CFG->transport = cfg_allocz(sizeof(struct rpki_tr_ssh_config));
-  RPKI_CFG->transport->type = RPKI_TR_SSH;
+  RPKI_CFG->tr_config = cfg_allocz(sizeof(struct rpki_tr_ssh_config));
+  RPKI_CFG->tr_config->type = RPKI_TR_SSH;
 };
 
 rpki_transport_ssh_opts:
@@ -128,14 +128,14 @@ rpki_transport_ssh_opts:
  ;
 
 rpki_transport_ssh_item:
-   BIRD PRIVATE KEY text  { RPKI_CFG_SSH->bird_private_key = $4; }
- | REMOTE PUBLIC KEY text { RPKI_CFG_SSH->cache_public_key = $4; }
- | USER text              { RPKI_CFG_SSH->user = $2; }
+   BIRD PRIVATE KEY text  { RPKI_TR_SSH_CFG->bird_private_key = $4; }
+ | REMOTE PUBLIC KEY text { RPKI_TR_SSH_CFG->cache_public_key = $4; }
+ | USER text              { RPKI_TR_SSH_CFG->user = $2; }
  ;
 
 rpki_transport_ssh_check:
 {
-  if (RPKI_CFG_SSH->user == NULL)
+  if (RPKI_TR_SSH_CFG->user == NULL)
     cf_error("User must be set");
 };
 

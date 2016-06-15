@@ -17,64 +17,55 @@
 #include "sysdep/unix/unix.h"
 
 /**
- * rpki_hostname_autoresolv - Auto-resolve a IP address from a hostname
- * @sk: bird socket
+ * rpki_hostname_autoresolv - Auto-resolve an IP address from a hostname and port
+ * @host: domain name of host, e.g. "rpki-validator.realmv6.org"
+ * @port: network port
  *
- * Fills daddr and subtype. Returns TR_ERROR or TR_SUCCESS.
+ * Auto-resolve an IP address from a hostname and port.
+ * Returns &ip_addr structure with IP address or |IPA_NONE|.
  */
-static int
-rpki_hostname_autoresolv(sock *sk)
+static ip_addr
+rpki_hostname_autoresolv(const char *host, uint port)
 {
-  if (ipa_zero(sk->daddr) && sk->host == NULL)
-    return TR_ERROR;
+  ip_addr addr = {};
+  struct addrinfo *res;
+  struct addrinfo hints = {
+      .ai_family = AF_UNSPEC,
+      .ai_socktype = SOCK_STREAM,
+      .ai_flags = AI_ADDRCONFIG,
+  };
 
-  if (ipa_zero(sk->daddr) && sk->host)
+  if (!host)
+    return IPA_NONE;
+
+  char port_s[6]; /* size 6 is needed because the biggest port is "65535" + \0 */
+  bsnprintf(port_s, sizeof(port_s), "%u", port);
+
+  int err_code = getaddrinfo(host, port_s, &hints, &res);
+  if (err_code != 0)
   {
-    struct addrinfo *res;
-    struct addrinfo hints = {
-	.ai_family = AF_UNSPEC,
-	.ai_socktype = SOCK_STREAM,
-	.ai_flags = AI_ADDRCONFIG,
-    };
-
-    char port[6]; /* max is "65535" + '\0' */
-    bsnprintf(port, sizeof(port), "%u", sk->dport);
-
-    if (getaddrinfo(sk->host, port, &hints, &res) != 0)
-    {
-      CACHE_TRACE(D_EVENTS, (struct rpki_cache *) sk->data, "getaddrinfo error, %s", gai_strerror(errno));
-      return TR_ERROR;
-    }
-
-    switch (res->ai_family)
-    {
-    case AF_INET:
-      sk->subtype = SK_IPV4;
-      break;
-    default:
-      sk->subtype = SK_IPV6;
-    }
-
-    sockaddr sa = {
-	.sa = *res->ai_addr,
-    };
-
-    uint unused;
-    sockaddr_read(&sa, res->ai_family, &sk->daddr, NULL, &unused);
-
-    freeaddrinfo(res);
+    log(L_DEBUG "getaddrinfo failed: %s", gai_strerror(err_code));
+    return IPA_NONE;
   }
-  else
-    sk->subtype = ipa_is_ip4(sk->daddr) ? SK_IPV4 : SK_IPV6;
 
-  return TR_SUCCESS;
+  sockaddr sa = {
+      .sa = *res->ai_addr,
+  };
+
+  uint unused;
+  sockaddr_read(&sa, res->ai_family, &addr, NULL, &unused);
+
+  freeaddrinfo(res);
+  return addr;
 }
 
 /**
- * rpki_tr_open - Establish a network connection
- * @tr:
+ * rpki_tr_open - Prepare and open a socket connection
+ * @tr: initialized transport socket
  *
- * Returns TR_SUCCESS or TR_ERROR.
+ * Prepare and open a socket connection specified by @tr that must be initialized before.
+ * This function ends with a calling the sk_open() function.
+ * Returns RPKI_TR_SUCCESS or RPKI_TR_ERROR.
  */
 int
 rpki_tr_open(struct rpki_tr_sock *tr)
@@ -86,7 +77,9 @@ rpki_tr_open(struct rpki_tr_sock *tr)
   tr->sk = sk_new(cache->pool);
   sock *sk = tr->sk;
 
-  sk->type = -1; /* must be set in the specific transport layer in tr_open() */
+  /* sk->type -1 is invalid value, a correct value MUST be set in the specific transport layer in open_fp() hook */
+  sk->type = -1;
+
   sk->tx_hook = rpki_connected_hook;
   sk->err_hook = rpki_err_hook;
   sk->data = cache;
@@ -96,22 +89,46 @@ rpki_tr_open(struct rpki_tr_sock *tr)
   sk->rbsize = RPKI_RX_BUFFER_SIZE;
   sk->tbsize = RPKI_TX_BUFFER_SIZE;
   sk->tos = IP_PREC_INTERNET_CONTROL;
-  rpki_hostname_autoresolv(sk);
+
+  if (ipa_zero2(sk->daddr) && sk->host)
+  {
+    sk->daddr = rpki_hostname_autoresolv(sk->host, sk->dport);
+    if (ipa_zero(sk->daddr))
+    {
+      CACHE_TRACE(D_EVENTS, cache, "Cannot resolve the hostname %s", sk->host);
+      return RPKI_TR_ERROR;
+    }
+  }
 
   return tr->open_fp(tr);
 }
 
-/* Close socket and prepare it for possible next open */
-inline void
+/**
+ * rpki_tr_close - Close socket and prepare it for possible next open
+ * @tr: successfully opened transport socket
+ *
+ * Close socket and free resources.
+ */
+void
 rpki_tr_close(struct rpki_tr_sock *tr)
 {
-  tr->close_fp(tr);
+  if (tr->ident != NULL)
+  {
+    mb_free((char *) tr->ident);
+    tr->ident = NULL;
+  }
 
   rfree(tr->sk);
   tr->sk = NULL;
 }
 
-/* Returns a \0 terminated string identifier for the socket endpoint, eg host:port */
+/**
+ * rpki_tr_ident - Returns a string identifier for the rpki transport socket
+ * @tr: successfully opened transport socket
+ *
+ * Returns a \0 terminated string identifier for the socket endpoint, e.g. "<host>:<port>".
+ * Memory is allocated inside @tr structure.
+ */
 inline const char *
 rpki_tr_ident(struct rpki_tr_sock *tr)
 {
