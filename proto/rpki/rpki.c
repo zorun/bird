@@ -277,7 +277,9 @@ rpki_close_connection(struct rpki_cache *cache)
  * @cache: RPKI cache instance
  * @new_state: suggested new state
  *
- * Validates and makes transition. Does appropriate actions after change
+ * This function validates and makes transition between internal states.
+ * Cannot transit into the same state as cache is in already.
+ * Checkout the |rpki_is_allowed_transition_cache_state| function for imagine of possible transitions.
  */
 void
 rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state new_state)
@@ -315,7 +317,7 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
     break;
 
   case RPKI_CS_RESET:
-    /* Resetting RTR connection. */
+    /* Resetting cache connection. */
     cache->request_session_id = 1;
     cache->serial_num = 0;
     rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
@@ -325,13 +327,13 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
     /* Requesting for receive validation records from the cache server. */
     if (cache->request_session_id)
     {
-      /* Change to state RESET, if socket dont has a session_id */
+      /* Send request for Session ID */
       if (rpki_send_reset_query(cache) != RPKI_SUCCESS)
 	rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
     }
     else
     {
-      /* if we already have a session_id, send a serial query and start to sync */
+      /* We have already a session_id. So send a Serial Query and start to sync */
       if (rpki_send_serial_query(cache) != RPKI_SUCCESS)
 	rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
     }
@@ -347,7 +349,7 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
     break;
 
   case RPKI_CS_ERROR_NO_DATA_AVAIL:
-    /* No validation records are available on the RTR server. */
+    /* No validation records are available on the cache server. */
     rpki_cache_change_state(cache, RPKI_CS_RESET);
     break;
 
@@ -386,7 +388,8 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
  * rpki_check_refresh_interval - check validity of refresh interval value
  * @seconds: suggested value
  *
- * Validate value and return NULL if check passed or error message if check failed.
+ * This function validates value and should return |NULL|.
+ * If the check doesn't pass then returns error message.
  */
 const char *
 rpki_check_refresh_interval(uint seconds)
@@ -402,7 +405,8 @@ rpki_check_refresh_interval(uint seconds)
  * rpki_check_retry_interval - check validity of retry interval value
  * @seconds: suggested value
  *
- * Validate value and return NULL if check passed or error message if check failed.
+ * This function validates value and should return |NULL|.
+ * If the check doesn't pass then returns error message.
  */
 const char *
 rpki_check_retry_interval(uint seconds)
@@ -418,7 +422,8 @@ rpki_check_retry_interval(uint seconds)
  * rpki_check_expire_interval - check validity of expire interval value
  * @seconds: suggested value
  *
- * Validate value and return NULL if check passed or error message if check failed.
+ * This function validates value and should return |NULL|.
+ * If the check doesn't pass then returns error message.
  */
 const char *
 rpki_check_expire_interval(uint seconds)
@@ -445,8 +450,6 @@ rpki_init_cache(struct rpki_proto *p, struct rpki_config *cf)
 
   cache->state = RPKI_CS_SHUTDOWN;
   cache->request_session_id = 1;
-  cache->serial_num = 0;
-  cache->last_update = 0;
   cache->version = RPKI_MAX_VERSION;
 
   cache->refresh_interval = cf->refresh_interval;
@@ -564,12 +567,12 @@ rpki_reconfigure_cache(struct rpki_proto *p, struct rpki_cache *cache, struct rp
     }
   }
 
-#define TEST_INTERVAL(xxxname, big) 						\
-    if (cache->xxxname##_interval != new->xxxname##_interval ||			\
-	old->keep_##xxxname##_interval != new->keep_##xxxname##_interval) 	\
+#define TEST_INTERVAL(name, Name) 						\
+    if (cache->name##_interval != new->name##_interval ||			\
+	old->keep_##name##_interval != new->keep_##name##_interval) 		\
     { 										\
-      cache->xxxname##_interval = new->xxxname##_interval;			\
-      CACHE_TRACE(D_EVENTS, cache, #big " interval changed to %u seconds %s", cache->xxxname##_interval, (new->keep_##xxxname##_interval ? "and keep it" : "")); \
+      cache->name##_interval = new->name##_interval;				\
+      CACHE_TRACE(D_EVENTS, cache, #Name " interval changed to %u seconds %s", cache->name##_interval, (new->keep_##name##_interval ? "and keep it" : "")); \
       try_fast_reconnect = 1; 							\
     }
   TEST_INTERVAL(refresh, Refresh);
@@ -735,8 +738,10 @@ rpki_copy_config(struct proto_config *dest, struct proto_config *src)
 }
 
 /**
- * rpki_check_config - Check and fill configuration file after parsing
+ * rpki_check_config - check and complete configuration of RPKI protocol
  * @cf: RPKI configuration
+ *
+ * This function is called at the end of parsing RPKI protocol configuration.
  */
 void
 rpki_check_config(struct rpki_config *cf)
@@ -745,7 +750,7 @@ rpki_check_config(struct rpki_config *cf)
   if (cf->c.class == SYM_TEMPLATE)
     return;
 
-  if (cf->hostname == NULL)
+  if (ipa_zero(cf->ip) && cf->hostname == NULL)
     cf_error("Address or hostname of remote cache server must be set");
 
   if (cf->tr_config == NULL)

@@ -32,10 +32,10 @@
 #define RPKI_MIN_VERSION 	RPKI_VERSION_0
 #define RPKI_MAX_VERSION 	RPKI_VERSION_1
 
-/* return values */
+/* Return values */
 enum rpki_rtvals {
-    RPKI_SUCCESS = 0,
-    RPKI_ERROR = -1
+  RPKI_SUCCESS = 0,
+  RPKI_ERROR = -1
 };
 
 struct rpki_proto {

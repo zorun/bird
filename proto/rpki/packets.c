@@ -888,6 +888,7 @@ rpki_rx_packet(struct rpki_cache *cache, void *pdu, uint len)
     break;
 
   case ROUTER_KEY:
+    /* TODO: Implement Router Key PDU handling */
     break;
 
   default:
