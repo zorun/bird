@@ -61,12 +61,12 @@ struct rpki_tr_config {
 
 /* A configure structure for TCP transport connection */
 struct rpki_tr_tcp_config {
-  struct rpki_tr_config transport;	/* Identification of transport type */
+  struct rpki_tr_config tr_config;	/* A parental data structure */
   /* No other internal configuration data */
 };
 
 struct rpki_tr_ssh_config {
-  struct rpki_tr_config transport;	/* Identification of transport type */
+  struct rpki_tr_config tr_config;	/* A parental data structure */
   const char *bird_private_key;		/* Filepath to the BIRD server private key */
   const char *cache_public_key;		/* Filepath to the public key of cache server, can be file known_hosts */
   const char *user;			/* Username for SSH connection */
