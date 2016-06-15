@@ -664,7 +664,7 @@ rpki_handle_serial_notify_pdu(struct rpki_cache *cache, const struct pdu_serial_
 
   /* XXX Serial number should be compared using method RFC 1982 (3.2) */
   if (cache->serial_num != pdu->serial_num)
-    rpki_cache_change_state(cache, RPKI_CS_SYNC);
+    rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
 }
 
 static int
@@ -701,6 +701,8 @@ rpki_handle_cache_response_pdu(struct rpki_cache *cache, const struct pdu_cache_
       return RPKI_ERROR;
     }
   }
+
+  rpki_cache_change_state(cache, RPKI_CS_SYNC_RUNNING);
   return RPKI_SUCCESS;
 }
 
@@ -880,11 +882,8 @@ rpki_rx_packet(struct rpki_cache *cache, void *pdu, uint len)
     break;
 
   case CACHE_RESET:
-    /* The cache may respond to a Serial Query informing the router that the
-     * cache cannot provide an incremental update starting from the Serial
-     * Number specified by the router.  The router must decide whether to
-     * issue a Reset Query or switch to a different cache. */
-    rpki_cache_change_state(cache, RPKI_CS_ERROR_NO_INCR_UPDATE_AVAIL);
+    /* Cache cannot provide an incremental update. */
+    rpki_cache_change_state(cache, RPKI_CS_NO_INCR_UPDATE_AVAIL);
     break;
 
   case ERROR:
@@ -1017,7 +1016,7 @@ rpki_connected_hook(sock *sk)
   sk->rx_hook = rpki_rx_hook;
   sk->tx_hook = rpki_tx_hook;
 
-  rpki_cache_change_state(cache, RPKI_CS_SYNC);
+  rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
 }
 
 int

@@ -65,10 +65,11 @@ enum rpki_cache_state {
     RPKI_CS_CONNECTING, 		/* Socket is establishing the transport connection. */
     RPKI_CS_ESTABLISHED,     		/* Connection is established, socket is waiting for a Serial Notify or expiration of the refresh_interval timer */
     RPKI_CS_RESET,			/* Resetting RTR connection. */
-    RPKI_CS_SYNC,			/* Receiving validation records from the RTR server. */
+    RPKI_CS_SYNC_START,			/* Sending a Serial/Reset Query PDU and expecting a Cache Response PDU */
+    RPKI_CS_SYNC_RUNNING,		/* Receiving validation records from the RTR server. A state between Cache Response PDU and End of Data PDU */
     RPKI_CS_FAST_RECONNECT,		/* Reconnect without any waiting period */
-    RPKI_CS_ERROR_NO_DATA_AVAIL,	/* No validation records are available on the RTR server. */
-    RPKI_CS_ERROR_NO_INCR_UPDATE_AVAIL, /* Server was unable to answer the last serial or reset query. */
+    RPKI_CS_NO_INCR_UPDATE_AVAIL, 	/* Server is unable to answer the last Serial Query and sent Cache Reset. */
+    RPKI_CS_ERROR_NO_DATA_AVAIL,	/* Server is unable to answer either a Serial Query or a Reset Query because it has no useful data available at this time. */
     RPKI_CS_ERROR_FATAL,		/* Fatal protocol error occurred. */
     RPKI_CS_ERROR_TRANSPORT,		/* Error on the transport socket occurred. */
     RPKI_CS_SHUTDOWN,			/* RTR Socket is stopped. */

@@ -36,10 +36,11 @@ static const char *str_cache_states[] = {
     [RPKI_CS_CONNECTING] = "Connecting",
     [RPKI_CS_ESTABLISHED] = "Established",
     [RPKI_CS_RESET] = "Reseting",
-    [RPKI_CS_SYNC] = "Syncing",
+    [RPKI_CS_SYNC_START] = "Syncing-Start",
+    [RPKI_CS_SYNC_RUNNING] = "Syncing-Running",
     [RPKI_CS_FAST_RECONNECT] = "Fast-Reconnect",
-    [RPKI_CS_ERROR_NO_DATA_AVAIL] = "No-Data-Available",
-    [RPKI_CS_ERROR_NO_INCR_UPDATE_AVAIL] = "No-Increment-Update-Available",
+    [RPKI_CS_NO_INCR_UPDATE_AVAIL] = "No-Increment-Update-Available",
+    [RPKI_CS_ERROR_NO_DATA_AVAIL] = "Cache-Error-No-Data-Available",
     [RPKI_CS_ERROR_FATAL] = "Fatal-Error",
     [RPKI_CS_ERROR_TRANSPORT] = "Transport-Error",
     [RPKI_CS_SHUTDOWN] = "Down"
@@ -51,20 +52,25 @@ rpki_cache_state_to_str(enum rpki_cache_state state)
   return str_cache_states[state];
 }
 
-/* Return 0 if non-valid transition,
- * return 1 if valid transition */
+/**
+ * rpki_is_allowed_transition_cache_state - validate cache state transition
+ *
+ * This function defines and validates state transitions of cache.
+ * It returns |1| for valid transition or zero for invalid transition.
+ */
 static int
 rpki_is_allowed_transition_cache_state(const enum rpki_cache_state old, const enum rpki_cache_state new)
 {
   switch (new)
   {
   case RPKI_CS_CONNECTING: 			return old == RPKI_CS_SHUTDOWN || old == RPKI_CS_ERROR_TRANSPORT || old == RPKI_CS_FAST_RECONNECT;
-  case RPKI_CS_ESTABLISHED: 			return old == RPKI_CS_SYNC;
-  case RPKI_CS_RESET:				return old == RPKI_CS_ERROR_NO_DATA_AVAIL || old == RPKI_CS_ERROR_NO_INCR_UPDATE_AVAIL;
-  case RPKI_CS_SYNC:				return old == RPKI_CS_RESET || old == RPKI_CS_CONNECTING || old == RPKI_CS_ESTABLISHED;
-  case RPKI_CS_FAST_RECONNECT:			return old == RPKI_CS_ESTABLISHED || old == RPKI_CS_SYNC;
-  case RPKI_CS_ERROR_NO_DATA_AVAIL:		return old == RPKI_CS_SYNC;
-  case RPKI_CS_ERROR_NO_INCR_UPDATE_AVAIL:	return old == RPKI_CS_SYNC;
+  case RPKI_CS_ESTABLISHED: 			return old == RPKI_CS_SYNC_RUNNING;
+  case RPKI_CS_RESET:				return old == RPKI_CS_ERROR_NO_DATA_AVAIL || old == RPKI_CS_NO_INCR_UPDATE_AVAIL;
+  case RPKI_CS_SYNC_START:			return old == RPKI_CS_RESET || old == RPKI_CS_CONNECTING || old == RPKI_CS_ESTABLISHED;
+  case RPKI_CS_SYNC_RUNNING:			return old == RPKI_CS_SYNC_START;
+  case RPKI_CS_FAST_RECONNECT:			return old == RPKI_CS_ESTABLISHED || old == RPKI_CS_SYNC_START || old == RPKI_CS_SYNC_RUNNING;
+  case RPKI_CS_NO_INCR_UPDATE_AVAIL:		return old == RPKI_CS_SYNC_START;
+  case RPKI_CS_ERROR_NO_DATA_AVAIL:		return old == RPKI_CS_SYNC_START;
   case RPKI_CS_ERROR_FATAL:			return 1;
   case RPKI_CS_ERROR_TRANSPORT:			return 1;
   case RPKI_CS_SHUTDOWN:			return 1;
@@ -144,12 +150,15 @@ rpki_refresh_hook(struct timer *tm)
   switch (cache->state)
   {
   case RPKI_CS_ESTABLISHED:
-    rpki_cache_change_state(cache, RPKI_CS_SYNC);
+    rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
     break;
 
-//  case RPKI_CS_SYNC:
-//    rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
-//    break;
+  case RPKI_CS_SYNC_START:
+    /* We sent Serial/Reset Query in last refresh hook call
+       and didn't receive Cache Response yet. It looks like
+       troubles with network. */
+    rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
+    break;
 
   default:
     break;
@@ -169,7 +178,8 @@ rpki_retry_hook(struct timer *tm)
   {
   case RPKI_CS_ESTABLISHED:
   case RPKI_CS_CONNECTING:
-  case RPKI_CS_SYNC:
+  case RPKI_CS_SYNC_START:
+  case RPKI_CS_SYNC_RUNNING:
   case RPKI_CS_SHUTDOWN:
     break;
 
@@ -270,7 +280,7 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
     if (sk == NULL || sk->fd < 0)
       rpki_open_connection(cache);
     else
-      rpki_cache_change_state(cache, RPKI_CS_SYNC);
+      rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
 
     break;
   }
@@ -282,11 +292,11 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
     /* Resetting RTR connection. */
     cache->request_session_id = 1;
     cache->serial_num = 0;
-    rpki_cache_change_state(cache, RPKI_CS_SYNC);
+    rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
     break;
 
-  case RPKI_CS_SYNC:
-    /* Requesting for receive validation records from the RTR server. */
+  case RPKI_CS_SYNC_START:
+    /* Requesting for receive validation records from the cache server. */
     if (cache->request_session_id)
     {
       /* Change to state RESET, if socket dont has a session_id */
@@ -301,9 +311,12 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
     }
     break;
 
-  case RPKI_CS_ERROR_NO_INCR_UPDATE_AVAIL:
-    /* Server was unable to answer the last serial or reset query. */
-    rpki_purge_records_if_outdated(cache);
+  case RPKI_CS_SYNC_RUNNING:
+    /* The state between Cache Response PDU and End of Data PDU. Only waiting for all IP Prefix PDUs. */
+    break;
+
+  case RPKI_CS_NO_INCR_UPDATE_AVAIL:
+    /* Server was unable to answer the last Serial Query and sent Cache Reset. */
     rpki_cache_change_state(cache, RPKI_CS_RESET);
     break;
 
