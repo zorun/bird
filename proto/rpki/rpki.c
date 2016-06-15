@@ -653,7 +653,7 @@ rpki_show_proto_info_timer(const char *name, uint num, timer *t)
   if (t->expires)
     cli_msg(-1006, "  %-17s %us (remains %us)", name, num, tm_remains(t));
   else
-    cli_msg(-1006, "  %-17s %us", name, num);
+    cli_msg(-1006, "  %-17s ---", name);
 }
 
 static void
@@ -676,13 +676,22 @@ rpki_show_proto_info(struct proto *P)
     cli_msg(-1006, "  Status:           %s", rpki_cache_state_to_str(cache->state));
     cli_msg(-1006, "  Transport:        %s", transport_name);
     cli_msg(-1006, "  Protocol version: %u", cache->version);
-    cli_msg(-1006, "  Session ID:       %u", cache->session_id);
-    cli_msg(-1006, "  Serial number:    %u", cache->serial_num);
+
+    if (cache->request_session_id)
+      cli_msg(-1006, "  Session ID:       ---");
+    else
+      cli_msg(-1006, "  Session ID:       %u", cache->session_id);
 
     if (cache->last_update)
+    {
+      cli_msg(-1006, "  Serial number:    %u", cache->serial_num);
       cli_msg(-1006, "  Last update:      before %us", now - cache->last_update);
+    }
     else
+    {
+      cli_msg(-1006, "  Serial number:    ---");
       cli_msg(-1006, "  Last update:      ---");
+    }
 
     rpki_show_proto_info_timer("Refresh interval:", cache->refresh_interval, cache->refresh_timer);
     rpki_show_proto_info_timer("Retry interval:", cache->retry_interval, cache->retry_timer);
