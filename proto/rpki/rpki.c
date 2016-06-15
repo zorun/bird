@@ -31,6 +31,9 @@
 #include "lib/string.h"
 #include "nest/cli.h"
 
+/* Return values for reconfiguration functions */
+#define NEED_TO_RESTART 	0
+#define SUCCESSFUL_RECONF 	1
 
 static const char *str_cache_states[] = {
     [RPKI_CS_CONNECTING] = "Connecting",
@@ -505,7 +508,7 @@ rpki_reconfigure_cache(struct rpki_proto *p, struct rpki_cache *cache, struct rp
       !proto_configure_channel(&p->p, &cache->roa6_channel, proto_cf_find_channel(p->p.cf, NET_ROA6)))
   {
     CACHE_TRACE(D_EVENTS, cache, "Channels changed");
-    return 0;
+    return NEED_TO_RESTART;
   }
 
   if (strcmp(old->hostname, new->hostname) != 0)
@@ -554,11 +557,11 @@ rpki_reconfigure_cache(struct rpki_proto *p, struct rpki_cache *cache, struct rp
   if (try_fast_reconnect)
     rpki_fast_reconnect_cache(cache, new, old);
 
-  return 1;
+  return SUCCESSFUL_RECONF;
 
  hard_cache_replace:
   rpki_replace_cache(cache, new, old);
-  return 1;
+  return SUCCESSFUL_RECONF;
 }
 
 /*
@@ -582,7 +585,7 @@ rpki_reconfigure_proto(struct rpki_proto *p, struct rpki_config *new_cf, struct 
   else if (new && old && cache)
     return rpki_reconfigure_cache(p, cache, new_cf, old_cf);
 
-  return 1;
+  return SUCCESSFUL_RECONF;
 }
 
 /*
@@ -598,10 +601,10 @@ rpki_reconfigure(struct proto *P, struct proto_config *CF)
 
   P->cf = CF;
   if (rpki_reconfigure_proto(p, new, old))
-    return 1;
+    return SUCCESSFUL_RECONF;
 
   P->cf = (void *) old;
-  return 0;
+  return NEED_TO_RESTART;
 }
 
 static void
