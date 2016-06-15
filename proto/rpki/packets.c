@@ -169,7 +169,7 @@ struct pdu_end_of_data_v1 {
   u32 expire_interval;
 };
 
-static int rpki_send_error_pdu(struct rpki_cache *cache, const void *erroneous_pdu, const u32 pdu_len, const enum pdu_error_type error, const char *text, const u32 text_len);
+static int rpki_send_error_pdu(struct rpki_cache *cache, const void *erroneous_pdu, const u32 err_pdu_len, const enum pdu_error_type error_code, const char *text, const u32 text_len);
 
 static inline enum
 pdu_type get_pdu_type(const void *pdu)
@@ -1021,31 +1021,31 @@ rpki_connected_hook(sock *sk)
 }
 
 int
-rpki_send_error_pdu(struct rpki_cache *cache, const void *erroneous_pdu, const u32 pdu_len, const enum pdu_error_type error, const char *text, const u32 text_len)
+rpki_send_error_pdu(struct rpki_cache *cache, const void *erroneous_pdu, const u32 err_pdu_len, const enum pdu_error_type error_code, const char *text, const u32 text_len)
 {
   /* Don't send errors for erroneous error PDUs */
-  if (pdu_len >= 2)
+  if (err_pdu_len >= 2)
   {
     if (get_pdu_type(erroneous_pdu) == ERROR)
       return RPKI_SUCCESS;
   }
 
-  uint msg_size = 16 + pdu_len + text_len;
-  char msg[msg_size];
-  struct pdu_header *header = (struct pdu_header *) msg;
-  header->ver = cache->version;
-  header->type = 10;
-  header->reserved = error;
-  header->len = msg_size;
+  u32 pdu_size = 16 + err_pdu_len + text_len;
+  char pdu[pdu_size];
+  struct pdu_error *e = (void *) pdu;
+  e->ver = cache->version;
+  e->type = ERROR;
+  e->error_code = error_code;	/* hton-ed  in rpki_pdu_to_network_byte_order() */
+  e->len = pdu_size;		/* htonl-ed in rpki_pdu_to_network_byte_order() */
+  e->len_enc_pdu = err_pdu_len; /* htonl-ed in rpki_pdu_to_network_byte_order() */
 
-  memcpy(msg+8, &pdu_len, sizeof(pdu_len));
-  if (pdu_len > 0)
-    memcpy(msg + 12, erroneous_pdu, pdu_len);
-  *(msg + 12 + pdu_len) = htonl(text_len);
+  if (err_pdu_len > 0)
+    memcpy(e->rest, erroneous_pdu, err_pdu_len);
+  *(e->rest + err_pdu_len) = htonl(text_len);
   if (text_len > 0)
-    memcpy(msg+16+pdu_len, text, text_len);
+    memcpy(e->rest + err_pdu_len + 4, text, text_len);
 
-  return rpki_send_pdu(cache, msg, msg_size);
+  return rpki_send_pdu(cache, pdu, pdu_size);
 }
 
 int
