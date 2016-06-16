@@ -48,181 +48,55 @@
 #define NEED_TO_RESTART 	0
 #define SUCCESSFUL_RECONF 	1
 
-static const char *str_cache_states[] = {
-    [RPKI_CS_CONNECTING] = "Connecting",
-    [RPKI_CS_ESTABLISHED] = "Established",
-    [RPKI_CS_RESET] = "Reseting",
-    [RPKI_CS_SYNC_START] = "Syncing-Start",
-    [RPKI_CS_SYNC_RUNNING] = "Syncing-Running",
-    [RPKI_CS_FAST_RECONNECT] = "Fast-Reconnect",
-    [RPKI_CS_NO_INCR_UPDATE_AVAIL] = "No-Increment-Update-Available",
-    [RPKI_CS_ERROR_NO_DATA_AVAIL] = "Cache-Error-No-Data-Available",
-    [RPKI_CS_ERROR_FATAL] = "Fatal-Error",
-    [RPKI_CS_ERROR_TRANSPORT] = "Transport-Error",
-    [RPKI_CS_SHUTDOWN] = "Down"
-};
+static int rpki_open_connection(struct rpki_cache *cache);
+static void rpki_close_connection(struct rpki_cache *cache);
 
-/**
- * rpki_cache_state_to_str - give a text representation of cache state
- * @state: A cache state
- *
- * The function converts logic cache state into string.
- */
-const char *
-rpki_cache_state_to_str(enum rpki_cache_state state)
-{
-  return str_cache_states[state];
-}
-
-/**
- * rpki_is_allowed_transition_cache_state - validate cache state transition
- *
- * This function defines and validates state transitions of cache.
- * It returns |1| for valid transition or zero for invalid transition.
- * It's good for the development.
- */
-static int
-rpki_is_allowed_transition_cache_state(const enum rpki_cache_state old, const enum rpki_cache_state new)
-{
-  switch (new)
-  {
-  case RPKI_CS_CONNECTING: 			return old == RPKI_CS_SHUTDOWN || old == RPKI_CS_ERROR_TRANSPORT || old == RPKI_CS_FAST_RECONNECT;
-  case RPKI_CS_ESTABLISHED: 			return old == RPKI_CS_SYNC_RUNNING;
-  case RPKI_CS_RESET:				return old == RPKI_CS_ERROR_NO_DATA_AVAIL || old == RPKI_CS_NO_INCR_UPDATE_AVAIL;
-  case RPKI_CS_SYNC_START:			return old == RPKI_CS_RESET || old == RPKI_CS_CONNECTING || old == RPKI_CS_ESTABLISHED;
-  case RPKI_CS_SYNC_RUNNING:			return old == RPKI_CS_SYNC_START;
-  case RPKI_CS_FAST_RECONNECT:			return old == RPKI_CS_ESTABLISHED || old == RPKI_CS_SYNC_START || old == RPKI_CS_SYNC_RUNNING;
-  case RPKI_CS_NO_INCR_UPDATE_AVAIL:		return old == RPKI_CS_SYNC_START;
-  case RPKI_CS_ERROR_NO_DATA_AVAIL:		return old == RPKI_CS_SYNC_START;
-  case RPKI_CS_ERROR_FATAL:			return 1;
-  case RPKI_CS_ERROR_TRANSPORT:			return 1;
-  case RPKI_CS_SHUTDOWN:			return 1;
-  }
-  return 0;
-}
-
-static struct proto *
-rpki_init(struct proto_config *CF)
-{
-  struct proto *P = proto_new(CF);
-
-  return P;
-}
-
-const char *
-rpki_get_cache_ident(struct rpki_cache *cache)
-{
-  return rpki_tr_ident(cache->tr_sock);
-}
 
 /*
- * Timers
+ * 	Routes handling
  */
 
-/**
- * rpki_schedule_next_refresh - control a scheduling of downloading data from cache server
- *
- * This function is periodically called during &ESTABLISHED or &SYNC* state cache connection.
- * The first refresh schedule is invoked after receiving a |End of Data| PDU and
- * has run by some &ERROR is occurred.
- */
 void
-rpki_schedule_next_refresh(struct rpki_cache *cache)
+rpki_table_add_roa(struct rpki_cache *cache, struct channel *channel, const net_addr_union *pfxr)
 {
-  uint time_to_wait = cache->refresh_interval;
+  struct rpki_proto *p = cache->p;
 
-  CACHE_DBG(cache, "Scheduling next refresh after %u seconds", time_to_wait);
-  tm_start(cache->refresh_timer, time_to_wait);
+  net *n = net_get(channel->table, &pfxr->n);
+
+  rta a0 = {
+      .src = p->p.main_source,
+      .source = RTS_RPKI,
+      .scope = SCOPE_UNIVERSE,
+      .cast = RTC_UNICAST,
+      .dest = RTD_BLACKHOLE,
+  };
+
+  rta *a = rta_lookup(&a0);
+  rte *e = rte_get_temp(a);
+
+  e->net = n;
+  e->pflags = 0;
+
+  rte_update2(channel, &pfxr->n, e, a0.src);
 }
 
-/**
- * rpki_schedule_next_retry - control a scheduling of retrying connection to cache server
- *
- * This function is periodically called during &ERROR* state cache connection.
- * The first retry schedule is invoked after any &ERROR* state occurred and
- * ends by reaching of &ESTABLISHED state again.
- */
 void
-rpki_schedule_next_retry(struct rpki_cache *cache)
+rpki_table_remove_roa(struct rpki_cache *cache, struct channel *channel, const net_addr_union *pfxr)
 {
-  uint time_to_wait = cache->retry_interval;
-
-  CACHE_DBG(cache, "Scheduling next retry after %u seconds", time_to_wait);
-  tm_start(cache->retry_timer, time_to_wait);
-}
-
-/**
- * rpki_schedule_next_expire_check - control a expiration of ROA entries
- *
- * This function is called after receiving each |End of Data| PDU.
- * The actual wait interval is calculated dynamically.
- * The expiration timer is destroyed after purging all ROA entries from tables.
- */
-void
-rpki_schedule_next_expire_check(struct rpki_cache *cache)
-{
-  /* A minimum time to wait is 1 second */
-  uint time_to_wait = MAX(((int)cache->expire_interval - (int)(now - cache->last_update)), 1);
-
-  CACHE_DBG(cache, "Scheduling next expiration check after %u seconds", time_to_wait);
-  tm_start(cache->expire_timer, time_to_wait);
+  struct rpki_proto *p = cache->p;
+  rte_update2(channel, &pfxr->n, NULL, p->p.main_source);
 }
 
 static void
-rpki_refresh_hook(struct timer *tm)
+rpki_table_remove_all(struct rpki_cache *cache)
 {
-  struct rpki_cache *cache = tm->data;
+  CACHE_TRACE(D_ROUTES, cache, "Removing all routes");
 
-  CACHE_DBG(cache, "%s", rpki_cache_state_to_str(cache->state));
+  if (cache->roa4_channel && cache->roa4_channel->channel_state != CS_DOWN)
+    channel_close(cache->roa4_channel);
 
-  switch (cache->state)
-  {
-  case RPKI_CS_ESTABLISHED:
-    rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
-    break;
-
-  case RPKI_CS_SYNC_START:
-    /* We sent Serial/Reset Query in last refresh hook call
-       and didn't receive Cache Response yet. It looks like
-       troubles with network. */
-    rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
-    break;
-
-  default:
-    break;
-  }
-
-  if (cache->state != RPKI_CS_SHUTDOWN && cache->state != RPKI_CS_ERROR_TRANSPORT)
-    rpki_schedule_next_refresh(cache);
-  else
-    CACHE_DBG(cache, "Stop refreshing");
-}
-
-static void
-rpki_retry_hook(struct timer *tm)
-{
-  struct rpki_cache *cache = tm->data;
-
-  CACHE_DBG(cache, "%s", rpki_cache_state_to_str(cache->state));
-
-  switch (cache->state)
-  {
-  case RPKI_CS_ESTABLISHED:
-  case RPKI_CS_CONNECTING:
-  case RPKI_CS_SYNC_START:
-  case RPKI_CS_SYNC_RUNNING:
-  case RPKI_CS_SHUTDOWN:
-    break;
-
-  default:
-    rpki_cache_change_state(cache, RPKI_CS_CONNECTING);
-    break;
-  }
-
-  if (cache->state != RPKI_CS_ESTABLISHED)
-    rpki_schedule_next_retry(cache);
-  else
-    CACHE_DBG(cache, "Stop retrying connection");
+  if (cache->roa6_channel && cache->roa6_channel->channel_state != CS_DOWN)
+    channel_close(cache->roa6_channel);
 }
 
 static void
@@ -245,45 +119,73 @@ rpki_purge_records_if_outdated(struct rpki_cache *cache)
   }
 }
 
-static void
-rpki_expire_hook(struct timer *tm)
-{
-  struct rpki_cache *cache = tm->data;
-
-  CACHE_DBG(cache, ""); /* Show name of function */
-
-  rpki_purge_records_if_outdated(cache);
-
-  if (cache->last_update)
-    rpki_schedule_next_expire_check(cache);
-  else
-    CACHE_DBG(cache, "Stop expiration check");
-}
 
 /*
- * Protocol logic
+ *	RPKI Protocol Logic
  */
 
-static int
-rpki_open_connection(struct rpki_cache *cache)
+static const char *str_cache_states[] = {
+    [RPKI_CS_CONNECTING] = "Connecting",
+    [RPKI_CS_ESTABLISHED] = "Established",
+    [RPKI_CS_RESET] = "Reseting",
+    [RPKI_CS_SYNC_START] = "Sync-Start",
+    [RPKI_CS_SYNC_RUNNING] = "Sync-Running",
+    [RPKI_CS_FAST_RECONNECT] = "Fast-Reconnect",
+    [RPKI_CS_NO_INCR_UPDATE_AVAIL] = "No-Increment-Update-Available",
+    [RPKI_CS_ERROR_NO_DATA_AVAIL] = "Cache-Error-No-Data-Available",
+    [RPKI_CS_ERROR_FATAL] = "Fatal-Protocol-Error",
+    [RPKI_CS_ERROR_TRANSPORT] = "Transport-Error",
+    [RPKI_CS_SHUTDOWN] = "Down"
+};
+
+/**
+ * rpki_cache_state_to_str - give a text representation of cache state
+ * @state: A cache state
+ *
+ * The function converts logic cache state into string.
+ */
+static const char *
+rpki_cache_state_to_str(enum rpki_cache_state state)
 {
-  CACHE_TRACE(D_EVENTS, cache, "Opening a connection");
-
-  if (rpki_tr_open(cache->tr_sock) == RPKI_TR_ERROR)
-  {
-    rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
-    return RPKI_TR_ERROR;
-  }
-
-  return RPKI_TR_SUCCESS;
+  return str_cache_states[state];
 }
 
+/**
+ * rpki_start_cache - kick up the connection to cache server
+ *
+ * This function is the high level method to kick up the connection to cache server.
+ */
 static void
-rpki_close_connection(struct rpki_cache *cache)
+rpki_start_cache(struct rpki_cache *cache)
 {
-  CACHE_TRACE(D_EVENTS, cache, "Closing a connection");
-  rpki_tr_close(cache->tr_sock);
-  proto_notify_state(&cache->p->p, PS_START);
+  rpki_cache_change_state(cache, RPKI_CS_CONNECTING);
+}
+
+/**
+ * rpki_is_allowed_transition_cache_state - validate cache state transition
+ *
+ * This function defines and validates state transitions of cache.
+ * It returns |1| for valid transition or zero for invalid transition.
+ * It's good for the development.
+ */
+static int
+rpki_is_allowed_transition_cache_state(const enum rpki_cache_state old, const enum rpki_cache_state new)
+{
+  switch (new)
+  {
+  case RPKI_CS_CONNECTING: 	return old == RPKI_CS_SHUTDOWN || old == RPKI_CS_ERROR_TRANSPORT || old == RPKI_CS_FAST_RECONNECT;
+  case RPKI_CS_ESTABLISHED: 	return old == RPKI_CS_SYNC_RUNNING;
+  case RPKI_CS_RESET:		return old == RPKI_CS_ERROR_NO_DATA_AVAIL || old == RPKI_CS_NO_INCR_UPDATE_AVAIL;
+  case RPKI_CS_SYNC_START:	return old == RPKI_CS_RESET || old == RPKI_CS_CONNECTING || old == RPKI_CS_ESTABLISHED;
+  case RPKI_CS_SYNC_RUNNING:	return old == RPKI_CS_SYNC_START;
+  case RPKI_CS_FAST_RECONNECT:	return old == RPKI_CS_ESTABLISHED || old == RPKI_CS_SYNC_START || old == RPKI_CS_SYNC_RUNNING;
+  case RPKI_CS_NO_INCR_UPDATE_AVAIL:	return old == RPKI_CS_SYNC_START;
+  case RPKI_CS_ERROR_NO_DATA_AVAIL:	return old == RPKI_CS_SYNC_START;
+  case RPKI_CS_ERROR_FATAL:	return 1;
+  case RPKI_CS_ERROR_TRANSPORT:	return 1;
+  case RPKI_CS_SHUTDOWN:	return 1;
+  }
+  return 0;
 }
 
 /**
@@ -400,6 +302,132 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
   };
 }
 
+
+/*
+ * 	RPKI Timer Events
+ */
+
+void
+rpki_schedule_next_refresh(struct rpki_cache *cache)
+{
+  uint time_to_wait = cache->refresh_interval;
+
+  CACHE_DBG(cache, "Scheduling next refresh after %u seconds", time_to_wait);
+  tm_start(cache->refresh_timer, time_to_wait);
+}
+
+void
+rpki_schedule_next_retry(struct rpki_cache *cache)
+{
+  uint time_to_wait = cache->retry_interval;
+
+  CACHE_DBG(cache, "Scheduling next retry after %u seconds", time_to_wait);
+  tm_start(cache->retry_timer, time_to_wait);
+}
+
+void
+rpki_schedule_next_expire_check(struct rpki_cache *cache)
+{
+  /* A minimum time to wait is 1 second */
+  uint time_to_wait = MAX(((int)cache->expire_interval - (int)(now - cache->last_update)), 1);
+
+  CACHE_DBG(cache, "Scheduling next expiration check after %u seconds", time_to_wait);
+  tm_start(cache->expire_timer, time_to_wait);
+}
+
+/**
+ * rpki_refresh_hook - control a scheduling of downloading data from cache server
+ *
+ * This function is periodically called during &ESTABLISHED or &SYNC* state cache connection.
+ * The first refresh schedule is invoked after receiving a |End of Data| PDU and
+ * has run by some &ERROR is occurred.
+ */
+static void
+rpki_refresh_hook(struct timer *tm)
+{
+  struct rpki_cache *cache = tm->data;
+
+  CACHE_DBG(cache, "%s", rpki_cache_state_to_str(cache->state));
+
+  switch (cache->state)
+  {
+  case RPKI_CS_ESTABLISHED:
+    rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
+    break;
+
+  case RPKI_CS_SYNC_START:
+    /* We sent Serial/Reset Query in last refresh hook call
+       and didn't receive Cache Response yet. It looks like
+       troubles with network. */
+    rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
+    break;
+
+  default:
+    break;
+  }
+
+  if (cache->state != RPKI_CS_SHUTDOWN && cache->state != RPKI_CS_ERROR_TRANSPORT)
+    rpki_schedule_next_refresh(cache);
+  else
+    CACHE_DBG(cache, "Stop refreshing");
+}
+
+/**
+ * rpki_retry_hook - control a scheduling of retrying connection to cache server
+ *
+ * This function is periodically called during &ERROR* state cache connection.
+ * The first retry schedule is invoked after any &ERROR* state occurred and
+ * ends by reaching of &ESTABLISHED state again.
+ */
+static void
+rpki_retry_hook(struct timer *tm)
+{
+  struct rpki_cache *cache = tm->data;
+
+  CACHE_DBG(cache, "%s", rpki_cache_state_to_str(cache->state));
+
+  switch (cache->state)
+  {
+  case RPKI_CS_ESTABLISHED:
+  case RPKI_CS_CONNECTING:
+  case RPKI_CS_SYNC_START:
+  case RPKI_CS_SYNC_RUNNING:
+  case RPKI_CS_SHUTDOWN:
+    break;
+
+  default:
+    rpki_cache_change_state(cache, RPKI_CS_CONNECTING);
+    break;
+  }
+
+  if (cache->state != RPKI_CS_ESTABLISHED)
+    rpki_schedule_next_retry(cache);
+  else
+    CACHE_DBG(cache, "Stop retrying connection");
+}
+
+/**
+ * rpki_expire_hook - control a expiration of ROA entries
+ *
+ * This function is called after receiving each |End of Data| PDU.
+ * The actual wait interval is calculated dynamically.
+ * The expiration timer is destroyed after purging all ROA entries from tables.
+ */
+static void
+rpki_expire_hook(struct timer *tm)
+{
+  struct rpki_cache *cache = tm->data;
+
+  CACHE_DBG(cache, ""); /* Show name of function */
+
+  rpki_purge_records_if_outdated(cache);
+
+  if (cache->last_update)
+    rpki_schedule_next_expire_check(cache);
+  else
+    CACHE_DBG(cache, "Stop expiration check");
+}
+
 /**
  * rpki_check_refresh_interval - check validity of refresh interval value
  * @seconds: suggested value
@@ -451,6 +479,11 @@ rpki_check_expire_interval(uint seconds)
   return NULL;
 }
 
+
+/*
+ * 	RPKI Cache
+ */
+
 static struct rpki_cache *
 rpki_init_cache(struct rpki_proto *p, struct rpki_config *cf)
 {
@@ -489,16 +522,37 @@ rpki_init_cache(struct rpki_proto *p, struct rpki_config *cf)
   return cache;
 }
 
-static void
-rpki_free_cache(struct rpki_cache *cache)
+/**
+ * rpki_get_cache_ident - give a text representation of remote cache name
+ *
+ * The function converts cache connection into string.
+ */
+const char *
+rpki_get_cache_ident(struct rpki_cache *cache)
 {
-  struct rpki_proto *p = cache->p;
+  return rpki_tr_ident(cache->tr_sock);
+}
 
-  rpki_table_remove_all(cache);
+static int
+rpki_open_connection(struct rpki_cache *cache)
+{
+  CACHE_TRACE(D_EVENTS, cache, "Opening a connection");
 
-  CACHE_TRACE(D_EVENTS, p->cache, "Destroyed");
-  rfree(cache->pool);
-  p->cache = NULL;
+  if (rpki_tr_open(cache->tr_sock) == RPKI_TR_ERROR)
+  {
+    rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
+    return RPKI_TR_ERROR;
+  }
+
+  return RPKI_TR_SUCCESS;
+}
+
+static void
+rpki_close_connection(struct rpki_cache *cache)
+{
+  CACHE_TRACE(D_EVENTS, cache, "Closing a connection");
+  rpki_tr_close(cache->tr_sock);
+  proto_notify_state(&cache->p->p, PS_START);
 }
 
 static int
@@ -512,10 +566,21 @@ rpki_shutdown(struct proto *P)
 }
 
 static void
-rpki_start_cache(struct rpki_cache *cache)
+rpki_free_cache(struct rpki_cache *cache)
 {
-  rpki_cache_change_state(cache, RPKI_CS_CONNECTING);
+  struct rpki_proto *p = cache->p;
+
+  rpki_table_remove_all(cache);
+
+  CACHE_TRACE(D_EVENTS, p->cache, "Destroyed");
+  rfree(cache->pool);
+  p->cache = NULL;
 }
+
+
+/*
+ * 	RPKI Reconfiguration
+ */
 
 static void
 rpki_replace_cache(struct rpki_cache *cache, struct rpki_config *new, struct rpki_config *old)
@@ -537,9 +602,15 @@ rpki_fast_reconnect_cache(struct rpki_cache *cache, struct rpki_config *new, str
     rpki_replace_cache(cache, old, new);
 }
 
-/*
- * Return 0 if need to restart
- * Return 1 if reconfiguration finished successful
+/**
+ * rpki_reconfigure_cache - a cache reconfiguration
+ * @p: RPKI protocol instance
+ * @cache: a cache connection
+ * @new: new RPKI configuration
+ * @old: old RPKI configuration
+ *
+ * This function reconfigures existing single cache connection with new existing configuration.
+ * Returns |NEED_TO_RESTART| or |SUCCESSFUL_RECONF|.
  */
 static int
 rpki_reconfigure_cache(struct rpki_proto *p, struct rpki_cache *cache, struct rpki_config *new, struct rpki_config *old)
@@ -606,9 +677,11 @@ rpki_reconfigure_cache(struct rpki_proto *p, struct rpki_cache *cache, struct rp
   return SUCCESSFUL_RECONF;
 }
 
-/*
- * Return 0 if need to restart
- * Return 1 if reconfiguration finished successful
+/**
+ * rpki_reconfigure_proto - a protocol reconfiguration
+ *
+ * This function reconfigures a protocol.
+ * Returns |NEED_TO_RESTART| or |SUCCESSFUL_RECONF|.
  */
 static int
 rpki_reconfigure_proto(struct rpki_proto *p, struct rpki_config *new_cf, struct rpki_config *old_cf)
@@ -630,9 +703,15 @@ rpki_reconfigure_proto(struct rpki_proto *p, struct rpki_config *new_cf, struct 
   return SUCCESSFUL_RECONF;
 }
 
-/*
- * Return 0 if need to restart
- * Return 1 if reconfiguration finished successful
+/**
+ * rpki_reconfigure - a protocol reconfiguration hook
+ * @P: a protocol instance
+ * @CF: a new protocol configuration
+ *
+ * This function is wrap function for |rpki_reconfigure_proto()|.
+ * It sets new protocol configuration into a protocol structure.
+ * If the protocol needs to be restarted then there is set an old configuration back.
+ * Returns |NEED_TO_RESTART| or |SUCCESSFUL_RECONF|.
  */
 static int
 rpki_reconfigure(struct proto *P, struct proto_config *CF)
@@ -642,11 +721,35 @@ rpki_reconfigure(struct proto *P, struct proto_config *CF)
   struct rpki_config *old = (void *) p->p.cf;
 
   P->cf = CF;
-  if (rpki_reconfigure_proto(p, new, old))
+  if (rpki_reconfigure_proto(p, new, old) == SUCCESSFUL_RECONF)
     return SUCCESSFUL_RECONF;
 
   P->cf = (void *) old;
   return NEED_TO_RESTART;
+}
+
+
+/*
+ * 	RPKI Protocol Glue
+ */
+
+static struct proto *
+rpki_init(struct proto_config *CF)
+{
+  struct proto *P = proto_new(CF);
+
+  return P;
+}
+
+static int
+rpki_start(struct proto *P)
+{
+  struct rpki_proto *p = (void *) P;
+  struct rpki_config *cf = (void *) P->cf;
+
+  rpki_reconfigure_proto(p, cf, NULL);
+
+  return PS_START;
 }
 
 static void
@@ -728,30 +831,10 @@ rpki_show_proto_info(struct proto *P)
   }
 }
 
-static int
-rpki_start(struct proto *P)
-{
-  struct rpki_proto *p = (void *) P;
-  struct rpki_config *cf = (void *) P->cf;
 
-  rpki_reconfigure_proto(p, cf, NULL);
-
-  return PS_START;
-}
-
-static void
-rpki_postconfig(struct proto_config *CF)
-{
-  /* Define default channel */
-  if (EMPTY_LIST(CF->channels))
-    channel_config_new(NULL, CF->net_type, CF);
-}
-
-static void
-rpki_copy_config(struct proto_config *dest, struct proto_config *src)
-{
-  /* Just a shallow copy */
-}
+/*
+ * 	RPKI Protocol Configuration
+ */
 
 /**
  * rpki_check_config - check and complete configuration of RPKI protocol
@@ -786,6 +869,20 @@ rpki_check_config(struct rpki_config *cf)
       cf->port = RPKI_TCP_PORT;
     }
   }
+}
+
+static void
+rpki_postconfig(struct proto_config *CF)
+{
+  /* Define default channel */
+  if (EMPTY_LIST(CF->channels))
+    channel_config_new(NULL, CF->net_type, CF);
+}
+
+static void
+rpki_copy_config(struct proto_config *dest, struct proto_config *src)
+{
+  /* Just a shallow copy */
 }
 
 struct protocol proto_rpki = {

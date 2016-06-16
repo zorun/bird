@@ -178,49 +178,6 @@ pdu_type get_pdu_type(const void *pdu)
 }
 
 static void
-rpki_table_add_roa(struct rpki_cache *cache, struct channel *channel, const net_addr_union *pfxr)
-{
-  struct rpki_proto *p = cache->p;
-
-  net *n = net_get(channel->table, &pfxr->n);
-
-  rta a0 = {
-      .src = p->p.main_source,
-      .source = RTS_RPKI,
-      .scope = SCOPE_UNIVERSE,
-      .cast = RTC_UNICAST,
-      .dest = RTD_BLACKHOLE,
-  };
-
-  rta *a = rta_lookup(&a0);
-  rte *e = rte_get_temp(a);
-
-  e->net = n;
-  e->pflags = 0;
-
-  rte_update2(channel, &pfxr->n, e, a0.src);
-}
-
-static void
-rpki_table_remove_roa(struct rpki_cache *cache, struct channel *channel, const net_addr_union *pfxr)
-{
-  struct rpki_proto *p = cache->p;
-  rte_update2(channel, &pfxr->n, NULL, p->p.main_source);
-}
-
-void
-rpki_table_remove_all(struct rpki_cache *cache)
-{
-  CACHE_TRACE(D_ROUTES, cache, "Removing all routes");
-
-  if (cache->roa4_channel && cache->roa4_channel->channel_state != CS_DOWN)
-    channel_close(cache->roa4_channel);
-
-  if (cache->roa6_channel && cache->roa6_channel->channel_state != CS_DOWN)
-    channel_close(cache->roa6_channel);
-}
-
-static void
 rpki_pdu_to_network_byte_order(void *pdu)
 {
   struct pdu_header *header = pdu;
@@ -984,15 +941,6 @@ rpki_fire_tx(struct rpki_cache *cache)
   uint bytes_to_send = sk->tpos - sk->tbuf;
   DBG("Sending %u bytes", bytes_to_send);
   return sk_send(sk, bytes_to_send);
-}
-
-void
-rpki_kick_tx(sock *sk)
-{
-  struct rpki_cache *cache = sk->data;
-
-  while (rpki_fire_tx(cache) > 0)
-    ;
 }
 
 void

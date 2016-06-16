@@ -32,33 +32,9 @@
 #define RPKI_MIN_VERSION 	RPKI_VERSION_0
 #define RPKI_MAX_VERSION 	RPKI_VERSION_1
 
-/* Return values */
-enum rpki_rtvals {
-  RPKI_SUCCESS = 0,
-  RPKI_ERROR = -1
-};
-
-struct rpki_proto {
-  struct proto p;
-  struct rpki_cache *cache;
-};
-
-struct rpki_config {
-  struct proto_config c;
-  const char *hostname;			/* Full domain name or stringified IP address of cache server */
-  ip_addr ip;				/* IP address of remote cache server or IPA_NONE */
-  u16 port;				/* Port number of cache server */
-  struct rpki_tr_config *tr_config;	/* Specific transport configuration structure, i.e. rpki_tr_tcp_config or rpki_tr_ssh_config */
-  u32 refresh_interval;			/* Time interval (in seconds) for periodical downloading data from cache server */
-  u32 retry_interval;			/* Time interval (in seconds) for an unreachable server */
-  u32 expire_interval;			/* Maximal lifetime (in seconds) of ROAs without any successful refreshment */
-  u8 keep_refresh_interval:1;		/* Do not overwrite refresh interval by cache server update */
-  u8 keep_retry_interval:1;		/* Do not overwrite retry interval by cache server update */
-  u8 keep_expire_interval:1;		/* Do not overwrite expire interval by cache server update */
-};
 
 /*
- * Cache server
+ * 	RPKI Cache
  */
 
 enum rpki_cache_state {
@@ -103,19 +79,67 @@ struct rpki_cache {
 
 const char *rpki_get_cache_ident(struct rpki_cache *cache);
 
-void rpki_check_config(struct rpki_config *cf);
-const char *rpki_check_refresh_interval(uint seconds);
-const char *rpki_check_retry_interval(uint seconds);
-const char *rpki_check_expire_interval(uint seconds);
+
+/*
+ * 	Routes handling
+ */
+
+void rpki_table_add_roa(struct rpki_cache *cache, struct channel *channel, const net_addr_union *pfxr);
+void rpki_table_remove_roa(struct rpki_cache *cache, struct channel *channel, const net_addr_union *pfxr);
+
+
+/*
+ *	RPKI Protocol Logic
+ */
+
+void rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state new_state);
+
+
+/*
+ * 	RPKI Timer Events
+ */
 
 void rpki_schedule_next_refresh(struct rpki_cache *cache);
 void rpki_schedule_next_retry(struct rpki_cache *cache);
 void rpki_schedule_next_expire_check(struct rpki_cache *cache);
 
-void rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state new_state);
+const char *rpki_check_refresh_interval(uint seconds);
+const char *rpki_check_retry_interval(uint seconds);
+const char *rpki_check_expire_interval(uint seconds);
+
 
 /*
- * Debug/log outputs
+ * 	RPKI Protocol Configuration
+ */
+
+struct rpki_proto {
+  struct proto p;
+  struct rpki_cache *cache;
+};
+
+struct rpki_config {
+  struct proto_config c;
+  const char *hostname;			/* Full domain name or stringified IP address of cache server */
+  ip_addr ip;				/* IP address of remote cache server or IPA_NONE */
+  u16 port;				/* Port number of cache server */
+
+  /* Attention: allocated specific transport configuration structure,
+   *  i.e. rpki_tr_tcp_config or rpki_tr_ssh_config */
+  struct rpki_tr_config *tr_config;
+
+  u32 refresh_interval;			/* Time interval (in seconds) for periodical downloading data from cache server */
+  u32 retry_interval;			/* Time interval (in seconds) for an unreachable server */
+  u32 expire_interval;			/* Maximal lifetime (in seconds) of ROAs without any successful refreshment */
+  u8 keep_refresh_interval:1;		/* Do not overwrite refresh interval by cache server update */
+  u8 keep_retry_interval:1;		/* Do not overwrite retry interval by cache server update */
+  u8 keep_expire_interval:1;		/* Do not overwrite expire interval by cache server update */
+};
+
+void rpki_check_config(struct rpki_config *cf);
+
+
+/*
+ *	Logger
  */
 
 #define RPKI_LOG(log_level, rpki, msg, args...) 			\

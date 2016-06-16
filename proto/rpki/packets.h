@@ -18,21 +18,26 @@
 #define RPKI_TX_BUFFER_SIZE	65536
 #define RPKI_PDU_HEADER_LEN 	8
 
-/* Error PDU size is the biggest (has encapsulate PDU inside):
- * 	Header size 8 Bytes +
- * 	Length of Encapsulated PDU 4 Bytes +
- * 	Encapsulated PDU IPv6 32 Bytes +
- * 	Length of Text 4 Bytes +
- * 	UTF-8 Text 400*2 Bytes
- * 	= 848 Bytes
- */
+/* A Error PDU size is the biggest (has encapsulate PDU inside):
+ * 	   +8 bytes (Header size)
+ * 	   +4 bytes (Length of Encapsulated PDU)
+ * 	  +32 bytes (Encapsulated PDU IPv6 32)
+ * 	   +4 bytes (Length of inserted text)
+ * 	 +800 bytes (UTF-8 text 400*2 bytes)
+ * 	------------
+ * 	= 848 bytes (Maximal expected PDU size) */
 #define RPKI_PDU_MAX_LEN	848
+
+/* Return values */
+enum rpki_rtvals {
+  RPKI_SUCCESS = 0,
+  RPKI_ERROR = -1
+};
 
 int rpki_send_serial_query(struct rpki_cache *cache);
 int rpki_send_reset_query(struct rpki_cache *cache);
 int rpki_rx_hook(sock *sk, int size);
 void rpki_connected_hook(sock *sk);
 void rpki_err_hook(sock *sk, int size);
-void rpki_table_remove_all(struct rpki_cache *cache);
 
 #endif
