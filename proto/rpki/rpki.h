@@ -122,11 +122,7 @@ struct rpki_config {
   const char *hostname;			/* Full domain name or stringified IP address of cache server */
   ip_addr ip;				/* IP address of remote cache server or IPA_NONE */
   u16 port;				/* Port number of cache server */
-
-  /* Attention: allocated specific transport configuration structure,
-   *  i.e. rpki_tr_tcp_config or rpki_tr_ssh_config */
-  struct rpki_tr_config *tr_config;
-
+  struct rpki_tr_config tr_config;	/* Specific transport configuration structure */
   u32 refresh_interval;			/* Time interval (in seconds) for periodical downloading data from cache server */
   u32 retry_interval;			/* Time interval (in seconds) for an unreachable server */
   u32 expire_interval;			/* Maximal lifetime (in seconds) of ROAs without any successful refreshment */

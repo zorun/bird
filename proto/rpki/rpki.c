@@ -511,7 +511,7 @@ rpki_init_cache(struct rpki_proto *p, struct rpki_config *cf)
   cache->tr_sock = mb_allocz(pool, sizeof(struct rpki_tr_sock));
   cache->tr_sock->cache = cache;
 
-  switch (cf->tr_config->type)
+  switch (cf->tr_config.type)
   {
   case RPKI_TR_TCP: rpki_tr_tcp_init(cache->tr_sock); break;
   case RPKI_TR_SSH: rpki_tr_ssh_init(cache->tr_sock); break;
@@ -636,15 +636,15 @@ rpki_reconfigure_cache(struct rpki_proto *p, struct rpki_cache *cache, struct rp
     goto hard_cache_replace;
   }
 
-  if (old->tr_config->type != new->tr_config->type)
+  if (old->tr_config.type != new->tr_config.type)
   {
     CACHE_TRACE(D_EVENTS, cache, "Transport type changed");
     goto hard_cache_replace;
   }
-  else if ((old->tr_config->type == new->tr_config->type) && (new->tr_config->type == RPKI_TR_SSH))
+  else if ((old->tr_config.type == new->tr_config.type) && (new->tr_config.type == RPKI_TR_SSH))
   {
-    struct rpki_tr_ssh_config *ssh_old = (void *) old->tr_config;
-    struct rpki_tr_ssh_config *ssh_new = (void *) new->tr_config;
+    struct rpki_tr_ssh_config *ssh_old = (void *) old->tr_config.spec;
+    struct rpki_tr_ssh_config *ssh_new = (void *) new->tr_config.spec;
     if ((strcmp(ssh_old->bird_private_key, ssh_new->bird_private_key) != 0) ||
 	(strcmp(ssh_old->cache_public_key, ssh_new->cache_public_key) != 0) ||
 	(strcmp(ssh_old->user, ssh_new->user) != 0))
@@ -788,7 +788,7 @@ rpki_show_proto_info(struct proto *P)
 
   if (cache)
   {
-    switch (cf->tr_config->type)
+    switch (cf->tr_config.type)
     {
     case RPKI_TR_SSH: transport_name = "SSHv2"; break;
     case RPKI_TR_TCP: transport_name = "Unprotected over TCP"; break;
@@ -852,15 +852,15 @@ rpki_check_config(struct rpki_config *cf)
   if (ipa_zero(cf->ip) && cf->hostname == NULL)
     cf_error("Address or hostname of remote cache server must be set");
 
-  if (cf->tr_config == NULL)
+  if (cf->tr_config.spec == NULL)
   {
-    cf->tr_config = cfg_allocz(sizeof(struct rpki_tr_tcp_config));
-    cf->tr_config->type = RPKI_TR_TCP;
+    cf->tr_config.spec = cfg_allocz(sizeof(struct rpki_tr_tcp_config));
+    cf->tr_config.type = RPKI_TR_TCP;
   }
 
   if (cf->port == 0)
   {
-    switch (cf->tr_config->type)
+    switch (cf->tr_config.type)
     {
     case RPKI_SSH_PORT:
       cf->port = RPKI_SSH_PORT;

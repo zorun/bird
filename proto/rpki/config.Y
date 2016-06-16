@@ -13,7 +13,7 @@ CF_HDR
 CF_DEFINES
 
 #define RPKI_CFG ((struct rpki_config *) this_proto)
-#define RPKI_TR_SSH_CFG ((struct rpki_tr_ssh_config *) RPKI_CFG->tr_config)
+#define RPKI_TR_SSH_CFG ((struct rpki_tr_ssh_config *) RPKI_CFG->tr_config.spec)
 
 static void
 rpki_check_unused_hostname(void)
@@ -25,7 +25,7 @@ rpki_check_unused_hostname(void)
 static void
 rpki_check_unused_transport(void)
 {
-  if (RPKI_CFG->tr_config != NULL)
+  if (RPKI_CFG->tr_config.spec != NULL)
     cf_error("At the most one transport per protocol allowed");
 }
 
@@ -111,15 +111,15 @@ rpki_transport:
 rpki_transport_tcp_init:
 {
   rpki_check_unused_transport();
-  RPKI_CFG->tr_config = cfg_allocz(sizeof(struct rpki_tr_tcp_config));
-  RPKI_CFG->tr_config->type = RPKI_TR_TCP;
+  RPKI_CFG->tr_config.spec = cfg_allocz(sizeof(struct rpki_tr_tcp_config));
+  RPKI_CFG->tr_config.type = RPKI_TR_TCP;
 };
 
 rpki_transport_ssh_init:
 {
   rpki_check_unused_transport();
-  RPKI_CFG->tr_config = cfg_allocz(sizeof(struct rpki_tr_ssh_config));
-  RPKI_CFG->tr_config->type = RPKI_TR_SSH;
+  RPKI_CFG->tr_config.spec = cfg_allocz(sizeof(struct rpki_tr_ssh_config));
+  RPKI_CFG->tr_config.type = RPKI_TR_SSH;
 };
 
 rpki_transport_ssh_opts:

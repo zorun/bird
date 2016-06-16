@@ -23,7 +23,7 @@ rpki_tr_ssh_open(struct rpki_tr_sock *tr)
 {
   struct rpki_cache *cache = tr->cache;
   struct rpki_config *cf = (void *) cache->p->p.cf;
-  struct rpki_tr_ssh_config *ssh_cf = (void *) cf->tr_config;
+  struct rpki_tr_ssh_config *ssh_cf = (void *) cf->tr_config.spec;
   sock *sk = tr->sk;
 
   const char *err_msg;
@@ -54,7 +54,7 @@ rpki_tr_ssh_ident(struct rpki_tr_sock *tr)
 
   struct rpki_cache *cache = tr->cache;
   struct rpki_config *cf = (void *) cache->p->p.cf;
-  struct rpki_tr_ssh_config *ssh_cf = (void *) cf->tr_config;
+  struct rpki_tr_ssh_config *ssh_cf = (void *) cf->tr_config.spec;
 
   if (tr->ident != NULL)
     return tr->ident;

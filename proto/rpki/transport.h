@@ -37,11 +37,11 @@ enum rpki_tr_rtvals {
 
 /* A transport socket structure */
 struct rpki_tr_sock {
-  sock *sk;					/* Standard BIRD socket */
-  struct rpki_cache *cache;			/* Cache server */
-  int (*open_fp)(struct rpki_tr_sock *); 	/* Pointer to a function that establishes the socket connection */
-  const char *(*ident_fp)(struct rpki_tr_sock *); /* Pointer to a function that returns an identifier for the socket endpoint */
-  const char *ident;				/* Internal. Use ident_fp() hook instead of this pointer */
+  sock *sk;				/* Standard BIRD socket */
+  struct rpki_cache *cache;		/* Cache server */
+  int (*open_fp)(struct rpki_tr_sock *);	  /* Function that establishes the socket connection */
+  const char *(*ident_fp)(struct rpki_tr_sock *); /* Function that returns an identifier for the socket endpoint */
+  const char *ident;			/* Internal. Use ident_fp() hook instead of this pointer */
 };
 
 int rpki_tr_open(struct rpki_tr_sock *tr);
@@ -56,17 +56,15 @@ enum rpki_tr_type {
 
 /* Common configure structure for transports */
 struct rpki_tr_config {
-  enum rpki_tr_type type;
+  enum rpki_tr_type type;		/* RPKI_TR_TCP or RPKI_TR_SSH */
+  const void *spec;			/* Specific transport configuration, i.e. rpki_tr_tcp_config or rpki_tr_ssh_config */
 };
 
-/* A configure structure for TCP transport connection */
 struct rpki_tr_tcp_config {
-  struct rpki_tr_config tr_config;	/* A parental data structure */
-  /* No other internal configuration data */
+  /* No internal configuration data */
 };
 
 struct rpki_tr_ssh_config {
-  struct rpki_tr_config tr_config;	/* A parental data structure */
   const char *bird_private_key;		/* Filepath to the BIRD server private key */
   const char *cache_public_key;		/* Filepath to the public key of cache server, can be file known_hosts */
   const char *user;			/* Username for SSH connection */
