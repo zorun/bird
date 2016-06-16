@@ -3623,7 +3623,7 @@ protocol rip {
 }
 </code>
 
-<sect>RPKI
+<sect>RPKI-RTR
 
 <sect1>Introduction
 
@@ -3636,8 +3636,8 @@ should prevent the vast majority of accidental hijackings on the Internet
 today, e.g. the famous Pakastani accidental announcement of YouTube's address
 space.
 
-<p>The RPKI protocol receives and maintains a list of ROAs from remote cache
-server (also called validator) (RFC 6810). Then you can validate routes using
+<p>The RPKI-RTR protocol receives and maintains a set of ROAs from remote cache
+server (also called validator) (RFC 6810). You can validate routes using
 function <cf/roa_check()/ and setting a import filter at the BGP protocol. We
 should re-validate all of affected routes after RPKI update (RFC 6811), but we
 don't support it yet! You can use a BIRD client command <cf>reload in

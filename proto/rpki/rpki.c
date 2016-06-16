@@ -10,29 +10,45 @@
  */
 
 /**
- * DOC: RPKI
+ * DOC: RPKI To Router (RPKI-RTR)
  *
- * The RPKI protocol is implemented in several files: |rpki.c| containing the
- * protocol logic, timers, protocol glue with BIRD core, |packets.c| handling RPKI packet
- * processing, RX, TX 
+ * The RPKI RTR protocol is implemented in several files: |rpki.c| containing
+ * the routes handling, protocol logic, timer events, cache connection,
+ * reconfiguration, configuration and protocol glue with BIRD core, |packets.c|
+ * containing the RPKI packets handling and finally all transports files:
+ * |transport.c|, |tcp_transport.c| and |ssh_transport.c|.
  *
- * |rtr.c| (inside |rpki.c|), |transport.c| is protocol for
- * communication between router (BIRD) and RPKI remote cache server (RPKI
- * validator). A implementation is based on the RTRlib
- * (http://rpki.realmv6.org/).  The BIRD takes over |packets.c|, |rtr.c| (inside
- * |rpki.c|), |transport.c|, |tcp_transport.c| and |ssh_transport.c| files from
- * RTRlib.
+ * |transport.c| is a middle layer and interface for each specific transport.
+ * There is supported an unprotected TCP transport and an encrypted SSH
+ * transport. The SSH transport requires LibSSH library. LibSSH is loading
+ * dynamically using |dlopen()| function. SSH support is integrated in
+ * |sysdep/unix/io.c|. Each transport must implement an initialization, open and
+ * identification function. That's all.
  *
- * Each instance of RPKI is described by a structure &rpki_cache. The connection
- * to cache server can be provided by unprotected transport over TCP
+ * The implementation is based on the RTRlib (http://rpki.realmv6.org/). The
+ * BIRD takes over files |packets.c|, |rtr.c| (inside |rpki.c|), |transport.c|,
+ * |tcp_transport.c| and |ssh_transport.c| from RTRlib.
  *
- * A SSH transport requires LibSSH library. LibSSH is loading dynamically using
- * |dlopen| function.
+ * A RPKI RTR connection is described by a structure &rpki_cache. The main
+ * logic is located in |rpki_cache_change_state()| function. There is a state
+ * automat. The standard starting state flow looks like |Down| ~> |Connecting| ~>
+ * |Sync-Start| ~> |Sync-Running| ~> |Established|. Allowed transitions are
+ * defined by function |rpki_is_allowed_transition_cache_state()|.
+ *
+ * The RPKI-RTR protocol (RFC 6810) defines configurable refresh, retry and
+ * expire intervals. For maintaining a connection are used timer events that
+ * are scheduled by |rpki_schedule_next_refresh()|,
+ * |rpki_schedule_next_retry()| and |rpki_schedule_next_expire()| functions.
+ * A Retry timers event is active only after
+ *
+ * A reconfiguration of cache connection may works well without flushing all
+ * routes and loading again.
  *
  * Supported standards:
- * - RFC 6810 - main router side RPKI standard
- * - draft-ietf-sidr-rpki-rtr-rfc6810-bis-07 - successor of RFC 6810 - Explicit
- *   timing parameters - Protocol version number negotiation
+ * - RFC 6810 - the main RPKI-RTR standard
+ * - draft-ietf-sidr-rpki-rtr-rfc6810-bis-07 - a successor of RFC 6810
+ *   - Explicit timing parameters
+ *   - Protocol version number negotiation
  */
 
 #include <stdlib.h>
@@ -357,8 +373,8 @@ rpki_refresh_hook(struct timer *tm)
 
   case RPKI_CS_SYNC_START:
     /* We sent Serial/Reset Query in last refresh hook call
-       and didn't receive Cache Response yet. It looks like
-       troubles with network. */
+     * and didn't receive Cache Response yet. It looks like
+     * troubles with network. */
     rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
     break;
 
@@ -594,7 +610,7 @@ rpki_replace_cache(struct rpki_cache *cache, struct rpki_config *new, struct rpk
 }
 
 static void
-rpki_fast_reconnect_cache(struct rpki_cache *cache, struct rpki_config *new, struct rpki_config *old)
+rpki_try_fast_reconnect(struct rpki_cache *cache, struct rpki_config *new, struct rpki_config *old)
 {
   if (cache->state == RPKI_CS_ESTABLISHED)
     rpki_cache_change_state(cache, RPKI_CS_FAST_RECONNECT);
@@ -668,7 +684,7 @@ rpki_reconfigure_cache(struct rpki_proto *p, struct rpki_cache *cache, struct rp
 #undef TEST_INTERVAL
 
   if (try_fast_reconnect)
-    rpki_fast_reconnect_cache(cache, new, old);
+    rpki_try_fast_reconnect(cache, new, old);
 
   return SUCCESSFUL_RECONF;
 
@@ -784,10 +800,11 @@ rpki_show_proto_info(struct proto *P)
   struct rpki_proto *p = (struct rpki_proto *) P;
   struct rpki_config *cf = (void *) p->p.cf;
   struct rpki_cache *cache = p->cache;
-  const char *transport_name = "---";
 
   if (cache)
   {
+    const char *transport_name = "---";
+
     switch (cf->tr_config.type)
     {
     case RPKI_TR_SSH: transport_name = "SSHv2"; break;

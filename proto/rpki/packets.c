@@ -492,7 +492,7 @@ rpki_check_receive_packet(struct rpki_cache *cache, const void *pdu, const size_
 
   return RPKI_SUCCESS;
 
-error:
+ error:
 
   /* Send error msg to server, including unmodified pdu header (pdu variable instead header) */
 
@@ -619,7 +619,8 @@ rpki_handle_serial_notify_pdu(struct rpki_cache *cache, const struct pdu_serial_
     return;
   }
 
-  /* XXX Serial number should be compared using method RFC 1982 (3.2) */
+  /* XXX Serial number should be compared using method RFC 1982 (3.2).
+   * However we didn't even convert the serial numbers network->host byte order. */
   if (cache->serial_num != pdu->serial_num)
     rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
 }
@@ -981,7 +982,7 @@ rpki_send_error_pdu(struct rpki_cache *cache, const void *erroneous_pdu, const u
   struct pdu_error *e = (void *) pdu;
   e->ver = cache->version;
   e->type = ERROR;
-  e->error_code = error_code;	/* hton-ed  in rpki_pdu_to_network_byte_order() */
+  e->error_code = error_code;	/* htons-ed in rpki_pdu_to_network_byte_order() */
   e->len = pdu_size;		/* htonl-ed in rpki_pdu_to_network_byte_order() */
   e->len_enc_pdu = err_pdu_len; /* htonl-ed in rpki_pdu_to_network_byte_order() */
 
