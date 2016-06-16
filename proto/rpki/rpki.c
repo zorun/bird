@@ -109,12 +109,6 @@ rpki_get_cache_ident(struct rpki_cache *cache)
 void
 rpki_schedule_next_refresh(struct rpki_cache *cache)
 {
-  if (cache->state == RPKI_CS_SHUTDOWN || cache->state == RPKI_CS_ERROR_TRANSPORT)
-  {
-    CACHE_DBG(cache, "Stop refreshing");
-    return;
-  }
-
   uint time_to_wait = cache->refresh_interval;
 
   CACHE_DBG(cache, "Scheduling next refresh after %u seconds", time_to_wait);
@@ -133,16 +127,8 @@ rpki_schedule_next_retry(struct rpki_cache *cache)
 {
   uint time_to_wait = cache->retry_interval;
 
-  switch (cache->state)
-  {
-  case RPKI_CS_ESTABLISHED:
-    CACHE_DBG(cache, "Stop retrying connection");
-    break;
-
-  default:
-    CACHE_DBG(cache, "Scheduling next retry after %u seconds", time_to_wait);
-    tm_start(cache->retry_timer, time_to_wait);
-  }
+  CACHE_DBG(cache, "Scheduling next retry after %u seconds", time_to_wait);
+  tm_start(cache->retry_timer, time_to_wait);
 }
 
 /**
@@ -155,12 +141,6 @@ rpki_schedule_next_retry(struct rpki_cache *cache)
 void
 rpki_schedule_next_expire_check(struct rpki_cache *cache)
 {
-  if (cache->last_update == 0)
-  {
-    CACHE_DBG(cache, "Stop expiration check");
-    return;
-  }
-
   /* A minimum time to wait is 1 second */
   uint time_to_wait = MAX(((int)cache->expire_interval - (int)(now - cache->last_update)), 1);
 
@@ -192,7 +172,10 @@ rpki_refresh_hook(struct timer *tm)
     break;
   }
 
-  rpki_schedule_next_refresh(cache);
+  if (cache->state != RPKI_CS_SHUTDOWN && cache->state != RPKI_CS_ERROR_TRANSPORT)
+    rpki_schedule_next_refresh(cache);
+  else
+    CACHE_DBG(cache, "Stop refreshing");
 }
 
 static void
@@ -216,7 +199,10 @@ rpki_retry_hook(struct timer *tm)
     break;
   }
 
-  rpki_schedule_next_retry(cache);
+  if (cache->state != RPKI_CS_ESTABLISHED)
+    rpki_schedule_next_retry(cache);
+  else
+    CACHE_DBG(cache, "Stop retrying connection");
 }
 
 static void
@@ -247,7 +233,11 @@ rpki_expire_hook(struct timer *tm)
   CACHE_DBG(cache, ""); /* Show name of function */
 
   rpki_purge_records_if_outdated(cache);
-  rpki_schedule_next_expire_check(cache);
+
+  if (cache->last_update)
+    rpki_schedule_next_expire_check(cache);
+  else
+    CACHE_DBG(cache, "Stop expiration check");
 }
 
 static int
