@@ -17,15 +17,14 @@
 #include "sysdep/unix/unix.h"
 
 /**
- * rpki_hostname_autoresolv - Auto-resolve an IP address from a hostname and port
+ * rpki_hostname_autoresolv - auto-resolve an IP address from a hostname
  * @host: domain name of host, e.g. "rpki-validator.realmv6.org"
- * @port: network port
  *
- * Auto-resolve an IP address from a hostname and port.
+ * This function resolves an IP address from a hostname.
  * Returns &ip_addr structure with IP address or |IPA_NONE|.
  */
 static ip_addr
-rpki_hostname_autoresolv(const char *host, uint port)
+rpki_hostname_autoresolv(const char *host)
 {
   ip_addr addr = {};
   struct addrinfo *res;
@@ -38,10 +37,7 @@ rpki_hostname_autoresolv(const char *host, uint port)
   if (!host)
     return IPA_NONE;
 
-  char port_s[6]; /* size 6 is needed because the biggest port is "65535" + \0 */
-  bsnprintf(port_s, sizeof(port_s), "%u", port);
-
-  int err_code = getaddrinfo(host, port_s, &hints, &res);
+  int err_code = getaddrinfo(host, NULL, &hints, &res);
   if (err_code != 0)
   {
     log(L_DEBUG "getaddrinfo failed: %s", gai_strerror(err_code));
@@ -92,10 +88,10 @@ rpki_tr_open(struct rpki_tr_sock *tr)
 
   if (ipa_zero2(sk->daddr) && sk->host)
   {
-    sk->daddr = rpki_hostname_autoresolv(sk->host, sk->dport);
+    sk->daddr = rpki_hostname_autoresolv(sk->host);
     if (ipa_zero(sk->daddr))
     {
-      CACHE_TRACE(D_EVENTS, cache, "Cannot resolve the hostname %s", sk->host);
+      CACHE_TRACE(D_EVENTS, cache, "Cannot resolve the hostname '%s'", sk->host);
       return RPKI_TR_ERROR;
     }
   }
