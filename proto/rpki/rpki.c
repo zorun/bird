@@ -10,16 +10,29 @@
  */
 
 /**
- * DOC: RPKI to Router Protocol
+ * DOC: RPKI
  *
- * The Resource Public Key Infrastructure (RPKI) to Router Protocol (RFC 6810)
- * is protocol for communication between router (BIRD) and RPKI cache server
- * (RPKI validator). A implementation is based on the RTRlib (http://rpki.realmv6.org/).
- * The BIRD takes over |packets.c|, |rtr.c| (inside |rpki.c|), |transport.c|,
- * |tcp_transport.c| and |ssh_transport.c| files from RTRlib.
+ * The RPKI protocol is implemented in several files: |rpki.c| containing the
+ * protocol logic, timers, protocol glue with BIRD core, |packets.c| handling RPKI packet
+ * processing, RX, TX 
  *
- * A SSH transport requires LibSSH library. LibSSH is loading dynamically using dlopen
- * function.
+ * |rtr.c| (inside |rpki.c|), |transport.c| is protocol for
+ * communication between router (BIRD) and RPKI remote cache server (RPKI
+ * validator). A implementation is based on the RTRlib
+ * (http://rpki.realmv6.org/).  The BIRD takes over |packets.c|, |rtr.c| (inside
+ * |rpki.c|), |transport.c|, |tcp_transport.c| and |ssh_transport.c| files from
+ * RTRlib.
+ *
+ * Each instance of RPKI is described by a structure &rpki_cache. The connection
+ * to cache server can be provided by unprotected transport over TCP
+ *
+ * A SSH transport requires LibSSH library. LibSSH is loading dynamically using
+ * |dlopen| function.
+ *
+ * Supported standards:
+ * - RFC 6810 - main router side RPKI standard
+ * - draft-ietf-sidr-rpki-rtr-rfc6810-bis-07 - successor of RFC 6810 - Explicit
+ *   timing parameters - Protocol version number negotiation
  */
 
 #include <stdlib.h>
@@ -49,6 +62,12 @@ static const char *str_cache_states[] = {
     [RPKI_CS_SHUTDOWN] = "Down"
 };
 
+/**
+ * rpki_cache_state_to_str - give a text representation of cache state
+ * @state: A cache state
+ *
+ * The function converts logic cache state into string.
+ */
 const char *
 rpki_cache_state_to_str(enum rpki_cache_state state)
 {
@@ -60,6 +79,7 @@ rpki_cache_state_to_str(enum rpki_cache_state state)
  *
  * This function defines and validates state transitions of cache.
  * It returns |1| for valid transition or zero for invalid transition.
+ * It's good for the development.
  */
 static int
 rpki_is_allowed_transition_cache_state(const enum rpki_cache_state old, const enum rpki_cache_state new)
@@ -240,6 +260,10 @@ rpki_expire_hook(struct timer *tm)
     CACHE_DBG(cache, "Stop expiration check");
 }
 
+/*
+ * Protocol logic
+ */
+
 static int
 rpki_open_connection(struct rpki_cache *cache)
 {
@@ -267,7 +291,8 @@ rpki_close_connection(struct rpki_cache *cache)
  * @cache: RPKI cache instance
  * @new_state: suggested new state
  *
- * This function validates and makes transition between internal states.
+ * This function makes transitions between internal states.
+ * It represents the core of logic management of RPKI protocol.
  * Cannot transit into the same state as cache is in already.
  * Checkout the |rpki_is_allowed_transition_cache_state| function for imagine of possible transitions.
  */
@@ -281,7 +306,7 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
 
   if (!rpki_is_allowed_transition_cache_state(old_state, new_state))
   {
-    CACHE_TRACE(D_EVENTS, cache, "Change state %s -> %s is not allowed", rpki_cache_state_to_str(old_state), rpki_cache_state_to_str(new_state));
+    CACHE_DBG(cache, "Change state %s -> %s is not allowed", rpki_cache_state_to_str(old_state), rpki_cache_state_to_str(new_state));
     ASSERT(0);
     return;
   }
@@ -330,7 +355,8 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
     break;
 
   case RPKI_CS_SYNC_RUNNING:
-    /* The state between Cache Response PDU and End of Data PDU. Only waiting for all IP Prefix PDUs. */
+    /* The state between Cache Response and End of Data. Only waiting for
+     * receiving all IP Prefix PDUs and finally a End of Data PDU. */
     break;
 
   case RPKI_CS_NO_INCR_UPDATE_AVAIL:
@@ -364,7 +390,7 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
     break;
 
   case RPKI_CS_SHUTDOWN:
-    /* RTR Socket is stopped. */
+    /* The connection to cache has to stop */
     rpki_close_connection(cache);
     cache->request_session_id = 1;
     cache->serial_num = 0;

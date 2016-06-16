@@ -3694,7 +3694,7 @@ tables.
         with SSH encryption.
 
         <tag>refresh [keep] <m/num/</tag> Time period in seconds. Tells how
-        long to wait before next attempting to poll the cache, using a Serial
+        long to wait before next attempting to poll the cache using a Serial
         Query or a Reset Query packet. Must be lower than 86400 seconds (one
         day). A keyword <cf/keep/ suppresses updating this value by a
         cache server.
