@@ -858,10 +858,17 @@ static int
 rpki_open_channel(struct channel *cs)
 {
   if (cs)
+  {
     if (cs->channel_state != CS_FLUSHING)
+    {
+      cs->disabled = 0;	/* XXX Force enable */
       channel_open(cs);
+    }
     else
+    {
       return 0;
+    }
+  }
 
   return 1;
 }

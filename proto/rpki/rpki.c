@@ -109,10 +109,20 @@ rpki_table_remove_all(struct rpki_cache *cache)
   CACHE_TRACE(D_ROUTES, cache, "Removing all routes");
 
   if (cache->roa4_channel && cache->roa4_channel->channel_state != CS_DOWN)
+  {
     channel_close(cache->roa4_channel);
 
+    /* XXX Do not start this channel while other cache get connect and PS_UP */
+    cache->roa4_channel->disabled = 1;
+  }
+
   if (cache->roa6_channel && cache->roa6_channel->channel_state != CS_DOWN)
+  {
     channel_close(cache->roa6_channel);
+
+    /* XXX Do not start this channel while other cache get connect and PS_UP */
+    cache->roa6_channel->disabled = 1;
+  }
 }
 
 static void
@@ -581,12 +591,38 @@ rpki_shutdown(struct proto *P)
   return PS_DOWN;
 }
 
+/* XXX nest/proto.c */
+void proto_remove_channel(struct proto *p, struct channel *c);
+
+static int
+rpki_channel_down_hook(struct channel *c)
+{
+  proto_remove_channel(c->proto, c);
+  return 0;
+}
+
+static struct channel_class autofreed_channel_class = {
+  .channel_size = sizeof(struct channel),
+  .config_size = sizeof(struct channel_config),
+  .shutdown = rpki_channel_down_hook,
+};
+
 static void
 rpki_free_cache(struct rpki_cache *cache)
 {
   struct rpki_proto *p = cache->p;
 
   rpki_table_remove_all(cache);
+
+  /* Channels are allocated in a rpki protocol pool.
+   * FIXME: Channel should call a rpki_channel_down_hook()
+   *        after reaching CS_DOWN and free its self.
+   *        It doesn't work yet, because rpki_channel_down_hook()
+   *        is called at beginning of CS_FLUSH state! */
+  if (cache->roa4_channel)
+    cache->roa4_channel->channel = &autofreed_channel_class;
+  if (cache->roa6_channel)
+    cache->roa6_channel->channel = &autofreed_channel_class;
 
   CACHE_TRACE(D_EVENTS, p->cache, "Destroyed");
   rfree(cache->pool);
