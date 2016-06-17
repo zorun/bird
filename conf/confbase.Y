@@ -81,7 +81,7 @@ CF_DECLS
 %type <time> datetime
 %type <a> ipa
 %type <net> net_ip4_ net_ip6_ net_ip6 net_ip_ net_ip net_or_ipa
-%type <net_ptr> net_ net_any net_roa4_ net_roa6_ net_roa_
+%type <net_ptr> net_ net_any net_roa4_ net_roa6_ net_roa_ net_generic_
 
 %type <t> text opttext
 
@@ -214,12 +214,20 @@ net_roa6_: net_ip6_ MAX NUM AS NUM
     cf_error("Invalid max prefix length %d", $3);
 };
 
+net_generic_: KEY NUM
+{
+  $$ = cfg_alloc(sizeof(net_addr_generic));
+  /* TODO: get router ID here */
+  net_fill_generic($$, 4294967295, $2);
+};
+
 net_ip_: net_ip4_ | net_ip6_ ;
 net_roa_: net_roa4_ | net_roa6_ ;
 
 net_:
    net_ip_ { $$ = cfg_alloc($1.length); net_copy($$, &($1)); }
  | net_roa_
+ | net_generic_
  ;
 
 

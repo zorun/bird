@@ -11,6 +11,7 @@ const char * const net_label[] = {
   [NET_VPN6] = "vpn6",
   [NET_ROA4] = "roa4",
   [NET_ROA6] = "roa6",
+  [NET_GENERIC] = "gene",
 };
 
 const u16 net_addr_length[] = {
@@ -19,7 +20,8 @@ const u16 net_addr_length[] = {
   [NET_VPN4] = sizeof(net_addr_vpn4),
   [NET_VPN6] = sizeof(net_addr_vpn6),
   [NET_ROA4] = sizeof(net_addr_roa4),
-  [NET_ROA6] = sizeof(net_addr_roa6)
+  [NET_ROA6] = sizeof(net_addr_roa6),
+  [NET_GENERIC] = sizeof(net_addr_generic)
 };
 
 const u8 net_max_prefix_length[] = {
@@ -28,7 +30,8 @@ const u8 net_max_prefix_length[] = {
   [NET_VPN4] = IP4_MAX_PREFIX_LENGTH,
   [NET_VPN6] = IP6_MAX_PREFIX_LENGTH,
   [NET_ROA4] = IP4_MAX_PREFIX_LENGTH,
-  [NET_ROA6] = IP6_MAX_PREFIX_LENGTH
+  [NET_ROA6] = IP6_MAX_PREFIX_LENGTH,
+  [NET_GENERIC] = 0
 };
 
 const u16 net_max_text_length[] = {
@@ -38,6 +41,7 @@ const u16 net_max_text_length[] = {
   [NET_VPN6] = 65,	/* "4294967296:4294967296 ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/128" */
   [NET_ROA4] = 34,      /* "255.255.255.255/32-32 AS4294967295" */
   [NET_ROA6] = 60,      /* "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff/128-128 AS4294967295" */
+  [NET_GENERIC] = 28,   /* "(255.255.255.255,4294967295)" */
 };
 
 
@@ -60,6 +64,8 @@ net_format(const net_addr *N, char *buf, int buflen)
     return bsnprintf(buf, buflen, "%I4/%u-%u AS%u",  n->roa4.prefix, n->roa4.pxlen, n->roa4.max_pxlen, n->roa4.asn);
   case NET_ROA6:
     return bsnprintf(buf, buflen, "%I6/%u-%u AS%u",  n->roa6.prefix, n->roa6.pxlen, n->roa6.max_pxlen, n->roa6.asn);
+  case NET_GENERIC:
+    return bsnprintf(buf, buflen, "(%I4,%u)",  n->generic.router_id, n->generic.key);
   }
 
   return 0;
@@ -80,6 +86,7 @@ net_pxmask(const net_addr *a)
   case NET_ROA6:
     return ipa_from_ip6(ip6_mkmask(net6_pxlen(a)));
 
+  case NET_GENERIC:
   default:
     return IPA_NONE;
   }
@@ -105,6 +112,8 @@ net_compare(const net_addr *a, const net_addr *b)
     return net_compare_roa4((const net_addr_roa4 *) a, (const net_addr_roa4 *) b);
   case NET_ROA6:
     return net_compare_roa6((const net_addr_roa6 *) a, (const net_addr_roa6 *) b);
+  case NET_GENERIC:
+    return net_compare_generic((const net_addr_generic *) a, (const net_addr_generic *) b);
   }
   return 0;
 }
@@ -123,6 +132,9 @@ net_validate(const net_addr *N)
   case NET_VPN6:
   case NET_ROA6:
     return net_validate_ip6((net_addr_ip6 *) N);
+
+  case NET_GENERIC:
+    return 1;
 
   default:
     return 0;
@@ -164,6 +176,10 @@ net_classify(const net_addr *N)
   case NET_VPN6:
   case NET_ROA6:
     return ip6_zero(n->ip6.prefix) ? (IADDR_HOST | SCOPE_UNIVERSE) : ip6_classify(&n->ip6.prefix);
+
+  /* TODO: this is a dirty hack so that rte_validate() accepts the route */
+  case NET_GENERIC:
+    return (IADDR_HOST | SCOPE_UNIVERSE);
   }
 
   return IADDR_INVALID;
@@ -188,6 +204,7 @@ ipa_in_netX(const ip_addr a, const net_addr *n)
     return ip6_zero(ip6_and(ip6_xor(ipa_to_ip6(a), net6_prefix(n)),
 			    ip6_mkmask(net6_pxlen(n))));
 
+  case NET_GENERIC:
   default:
     return 0;
   }

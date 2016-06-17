@@ -19,7 +19,8 @@
 #define NET_VPN6	4
 #define NET_ROA4	5
 #define NET_ROA6	6
-#define NET_MAX		7
+#define NET_GENERIC	7
+#define NET_MAX		8
 
 #define NB_IP4		(1 << NET_IP4)
 #define NB_IP6		(1 << NET_IP6)
@@ -88,6 +89,14 @@ typedef struct net_addr_roa6 {
   u32 asn;
 } net_addr_roa6;
 
+typedef struct net_addr_generic {
+  u8 type;
+  u8 pxlen;
+  u16 length; /* Unused */
+  u32 router_id;
+  u32 key;
+} net_addr_generic;
+
 typedef union net_addr_union {
   net_addr n;
   net_addr_ip4 ip4;
@@ -96,6 +105,7 @@ typedef union net_addr_union {
   net_addr_vpn6 vpn6;
   net_addr_roa4 roa4;
   net_addr_roa6 roa6;
+  net_addr_generic generic;
 } net_addr_union;
 
 
@@ -125,6 +135,9 @@ extern const u16 net_max_text_length[];
 #define NET_ADDR_ROA6(prefix,pxlen,max_pxlen,asn) \
   ((net_addr_roa6) { NET_ROA6, pxlen, sizeof(net_addr_roa6), prefix, max_pxlen, asn })
 
+#define NET_ADDR_GENERIC(router_id,key) \
+  ((net_addr_generic) { NET_GENERIC, 0, sizeof(net_addr_generic), router_id, key })
+
 
 
 static inline void net_fill_ip4(net_addr *a, ip4_addr prefix, uint pxlen)
@@ -144,6 +157,9 @@ static inline void net_fill_roa4(net_addr *a, ip4_addr prefix, uint pxlen, uint 
 
 static inline void net_fill_roa6(net_addr *a, ip6_addr prefix, uint pxlen, uint max_pxlen, u32 asn)
 { *(net_addr_roa6 *)a = NET_ADDR_ROA6(prefix, pxlen, max_pxlen, asn); }
+
+static inline void net_fill_generic(net_addr *a, u32 router_id, u32 key)
+{ *(net_addr_generic *)a = NET_ADDR_GENERIC(router_id, key); }
 
 static inline void net_fill_ipa(net_addr *a, ip_addr prefix, uint pxlen)
 {
@@ -192,6 +208,7 @@ static inline ip_addr net_prefix(const net_addr *a)
   case NET_ROA6:
     return ipa_from_ip6(net6_prefix(a));
 
+  case NET_GENERIC:
   default:
     return IPA_NONE;
   }
@@ -229,6 +246,9 @@ static inline int net_equal_roa4(const net_addr_roa4 *a, const net_addr_roa4 *b)
 
 static inline int net_equal_roa6(const net_addr_roa6 *a, const net_addr_roa6 *b)
 { return !memcmp(a, b, sizeof(net_addr_roa6)); }
+
+static inline int net_equal_generic(const net_addr_generic *a, const net_addr_generic *b)
+{ return !memcmp(a, b, sizeof(net_addr_generic)); }
 
 static inline int net_equal_prefix_roa4(const net_addr_roa4 *a, const net_addr_roa4 *b)
 { return ip4_equal(a->prefix, b->prefix) && (a->pxlen == b->pxlen); }
@@ -274,6 +294,9 @@ static inline int net_compare_roa4(const net_addr_roa4 *a, const net_addr_roa4 *
 static inline int net_compare_roa6(const net_addr_roa6 *a, const net_addr_roa6 *b)
 { return ip6_compare(a->prefix, b->prefix) ?: uint_cmp(a->pxlen, b->pxlen) ?: uint_cmp(a->max_pxlen, b->max_pxlen) ?: uint_cmp(a->asn, b->asn); }
 
+static inline int net_compare_generic(const net_addr_generic *a, const net_addr_generic *b)
+{ return uint_cmp(a->router_id, b->router_id) ?: uint_cmp(a->key, b->key); }
+
 int net_compare(const net_addr *a, const net_addr *b);
 
 
@@ -298,6 +321,9 @@ static inline void net_copy_roa4(net_addr_roa4 *dst, const net_addr_roa4 *src)
 static inline void net_copy_roa6(net_addr_roa6 *dst, const net_addr_roa6 *src)
 { memcpy(dst, src, sizeof(net_addr_roa6)); }
 
+static inline void net_copy_generic(net_addr_generic *dst, const net_addr_generic *src)
+{ memcpy(dst, src, sizeof(net_addr_generic)); }
+
 
 static inline u32 net_hash_ip4(const net_addr_ip4 *n)
 { return ip4_hash(n->prefix) ^ ((u32) n->pxlen << 26); }
@@ -320,6 +346,9 @@ static inline u32 net_hash_roa4(const net_addr_roa4 *n)
 
 static inline u32 net_hash_roa6(const net_addr_roa6 *n)
 { return ip6_hash(n->prefix) ^ ((u32) n->pxlen << 26); }
+
+static inline u32 net_hash_generic(const net_addr_generic *n)
+{ return u32_hash(n->router_id) ^ u32_hash(n->key); }
 
 
 static inline int net_validate_ip4(const net_addr_ip4 *n)
