@@ -1082,7 +1082,8 @@ sk_ssh_free(sock *s)
 
   if (ssh->channel)
   {
-    ssh_channel_close(ssh->channel);
+    if (ssh_channel_is_open(ssh->channel))
+      ssh_channel_close(ssh->channel);
     ssh_channel_free(ssh->channel);
     ssh->channel = NULL;
   }
@@ -1172,7 +1173,7 @@ static void
 sk_dump(resource *r)
 {
   sock *s = (sock *) r;
-  static char *sk_type_names[] = { "TCP<", "TCP>", "TCP", "UDP", NULL, "IP", NULL, "MAGIC", "UNIX<", "UNIX", "DEL!" };
+  static char *sk_type_names[] = { "TCP<", "TCP>", "TCP", "UDP", NULL, "IP", NULL, "MAGIC", "UNIX<", "UNIX", "SSH>", "SSH", "DEL!" };
 
   debug("(%s, ud=%p, sa=%I, sp=%d, da=%I, dp=%d, tos=%d, ttl=%d, if=%s)\n",
 	sk_type_names[s->type],
@@ -1556,6 +1557,7 @@ sk_open_ssh(sock *s)
   ssh_options_set(sess, SSH_OPTIONS_LOG_VERBOSITY, &verbosity);
   ssh_options_set(sess, SSH_OPTIONS_HOST, s->host);
   ssh_options_set(sess, SSH_OPTIONS_PORT, &(s->dport));
+  /* TODO: Add SSH_OPTIONS_BINDADDR */
   ssh_options_set(sess, SSH_OPTIONS_USER, s->ssh->username);
 
   if (s->ssh->server_hostkey_path)
@@ -1568,16 +1570,16 @@ sk_open_ssh(sock *s)
 
   switch (sk_ssh_connect(s))
   {
-    case SSH_AGAIN:
-      break;
+  case SSH_AGAIN:
+    break;
 
-    case SSH_OK:
-      sk_ssh_connected(s);
-      break;
+  case SSH_OK:
+    sk_ssh_connected(s);
+    break;
 
-    case SSH_ERROR:
-      ERR2(ssh_get_error(sess));
-      break;
+  case SSH_ERROR:
+    ERR2(ssh_get_error(sess));
+    break;
   }
 
   return ssh_get_fd(sess);

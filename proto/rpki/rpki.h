@@ -39,7 +39,7 @@
 
 enum rpki_cache_state {
     RPKI_CS_CONNECTING, 		/* Socket is establishing the transport connection. */
-    RPKI_CS_ESTABLISHED,     		/* Connection is established, socket is waiting for a Serial Notify or expiration of the refresh_interval timer */
+    RPKI_CS_ESTABLISHED,		/* Connection is established, socket is waiting for a Serial Notify or expiration of the refresh_interval timer */
     RPKI_CS_RESET,			/* Resetting RTR connection. */
     RPKI_CS_SYNC_START,			/* Sending a Serial/Reset Query PDU and expecting a Cache Response PDU */
     RPKI_CS_SYNC_RUNNING,		/* Receiving validation records from the RTR server. A state between Cache Response PDU and End of Data PDU */
@@ -62,22 +62,23 @@ struct rpki_cache {
   struct rpki_tr_sock *tr_sock;		/* Transport specific socket */
   enum rpki_cache_state state;		/* RPKI_CS_* */
   u32 session_id;
-  u8 request_session_id;		/* 1: have to request new session id
-					 * 0: we have already received session id */
+  u8 request_session_id;		/* 1: have to request new session id; 0: we have already received session id */
   u32 serial_num;			/* Serial number denotes the logical version of data from cache server */
   u8 version;				/* Protocol version */
   bird_clock_t last_update;		/* Last successful synchronization with cache server */
+  bird_clock_t last_rx_prefix;		/* Last received prefix PDU */
 
-  /* Intervals can be changed by remote cache server on the fly */
-  u32 refresh_interval;
+  /* Intervals can be changed by cache server on the fly */
+  u32 refresh_interval;			/* Actual refresh interval */
   u32 retry_interval;
   u32 expire_interval;
-  timer *retry_timer;
-  timer *refresh_timer;
-  timer *expire_timer;
+  timer *retry_timer;			/* Retry timer event */
+  timer *refresh_timer;			/* Refresh timer event */
+  timer *expire_timer;			/* Expire timer event */
 };
 
 const char *rpki_get_cache_ident(struct rpki_cache *cache);
+const char *rpki_cache_state_to_str(enum rpki_cache_state state);
 
 
 /*
@@ -99,10 +100,6 @@ void rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_sta
  * 	RPKI Timer Events
  */
 
-void rpki_schedule_next_refresh(struct rpki_cache *cache);
-void rpki_schedule_next_retry(struct rpki_cache *cache);
-void rpki_schedule_next_expire_check(struct rpki_cache *cache);
-
 const char *rpki_check_refresh_interval(uint seconds);
 const char *rpki_check_retry_interval(uint seconds);
 const char *rpki_check_expire_interval(uint seconds);
@@ -120,7 +117,7 @@ struct rpki_proto {
 struct rpki_config {
   struct proto_config c;
   const char *hostname;			/* Full domain name or stringified IP address of cache server */
-  ip_addr ip;				/* IP address of remote cache server or IPA_NONE */
+  ip_addr ip;				/* IP address of cache server or IPA_NONE */
   u16 port;				/* Port number of cache server */
   struct rpki_tr_config tr_config;	/* Specific transport configuration structure */
   u32 refresh_interval;			/* Time interval (in seconds) for periodical downloading data from cache server */
@@ -146,7 +143,7 @@ void rpki_check_config(struct rpki_config *cf);
 #if defined(LOCAL_DEBUG) || defined(GLOBAL_DEBUG)
 #define CACHE_DBG(cache,msg,args...) 					\
     do { 								\
-      RPKI_LOG(L_DEBUG, (cache)->p, "%s: %s: " msg, rpki_get_cache_ident(cache), __func__, ## args);	\
+      RPKI_LOG(L_DEBUG, (cache)->p, "%s [%s] %s " msg, rpki_get_cache_ident(cache), rpki_cache_state_to_str((cache)->state), __func__, ## args); \
     } while(0)
 #else
 #define CACHE_DBG(cache,msg,args...) do { } while(0)
@@ -161,7 +158,7 @@ void rpki_check_config(struct rpki_config *cf);
 #define CACHE_TRACE(level,cache,msg,args...)				\
     do {								\
       if ((cache)->p->p.debug & level)					\
-        RPKI_LOG(L_TRACE, (cache)->p, "%s: " msg, rpki_get_cache_ident(cache), ## args);	\
+        RPKI_LOG(L_TRACE, (cache)->p, "%s [%s] " msg, rpki_get_cache_ident(cache), rpki_cache_state_to_str((cache)->state), ## args); \
     } while(0)
 
 #define RPKI_WARN(p, msg, args...) RPKI_LOG(L_WARN, p, msg, ## args);

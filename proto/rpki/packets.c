@@ -39,12 +39,25 @@ enum pdu_error_type {
   PDU_TOO_BIG = 32
 };
 
+static const char *str_pdu_error_type[] = {
+      [CORRUPT_DATA] = "Corrupt-Data",
+      [INTERNAL_ERROR] = "Internal-Error",
+      [NO_DATA_AVAIL] = "No-Data-Available",
+      [INVALID_REQUEST] = "Invalid-Request",
+      [UNSUPPORTED_PROTOCOL_VER] = "Unsupported-Protocol-Version",
+      [UNSUPPORTED_PDU_TYPE] = "Unsupported-PDU-Type",
+      [WITHDRAWAL_OF_UNKNOWN_RECORD] = "Withdrawal-Of-Unknown-Record",
+      [DUPLICATE_ANNOUNCEMENT] = "Duplicate-Announcement",
+      [PDU_TOO_BIG] = "PDU-Too-Big",
+};
+
 enum pdu_type {
   SERIAL_NOTIFY = 0,
   SERIAL_QUERY = 1,
   RESET_QUERY = 2,
   CACHE_RESPONSE = 3,
   IPV4_PREFIX = 4,
+  RESERVED = 5,
   IPV6_PREFIX = 6,
   END_OF_DATA = 7,
   CACHE_RESET = 8,
@@ -58,6 +71,7 @@ static const char *str_pdu_type[] = {
     [RESET_QUERY] = "Reset Query",
     [CACHE_RESPONSE] = "Cache Response",
     [IPV4_PREFIX] = "IPv4 Prefix",
+    [RESERVED] = "Reserved",
     [IPV6_PREFIX] = "IPv6 Prefix",
     [END_OF_DATA] = "End of Data",
     [CACHE_RESET] = "Cache Reset",
@@ -66,18 +80,16 @@ static const char *str_pdu_type[] = {
 };
 
 /*
-   0          8          16         24        31
-   .-------------------------------------------.
-   | Protocol |   PDU    |                     |
-   | Version  |   Type   |    reserved = zero  |
-   |  0 or 1  |  0 - 10  |                     |
-   +-------------------------------------------+
-   |                                           |
-   |                 Length >= 8               |
-   |                                           |
-   `-------------------------------------------'
- */
-
+ *  0          8          16         24        31
+ * .-------------------------------------------.
+ * | Protocol |   PDU    |                     |
+ * | Version  |   Type   |    reserved = zero  |
+ * |  0 or 1  |  0 - 10  |                     |
+ * +-------------------------------------------+
+ * |                                           |
+ * |                 Length >= 8               |
+ * |                                           |
+ * `-------------------------------------------' */
 struct pdu_header {
   u8 ver;
   u8 type;
@@ -134,13 +146,44 @@ struct pdu_ipv6 {
   u32 asn;
 };
 
+/*
+ *  0          8          16         24        31
+ *  .-------------------------------------------.
+ *  | Protocol |   PDU    |                     |
+ *  | Version  |   Type   |     Error Code      |
+ *  |    1     |    10    |                     |
+ *  +-------------------------------------------+
+ *  |                                           |
+ *  |                  Length                   |
+ *  |                                           |
+ *  +-------------------------------------------+
+ *  |                                           |
+ *  |       Length of Encapsulated PDU          |
+ *  |                                           |
+ *  +-------------------------------------------+
+ *  |                                           |
+ *  ~           Copy of Erroneous PDU           ~
+ *  |                                           |
+ *  +-------------------------------------------+
+ *  |                                           |
+ *  |           Length of Error Text            |
+ *  |                                           |
+ *  +-------------------------------------------+
+ *  |                                           |
+ *  |              Arbitrary Text               |
+ *  |                    of                     |
+ *  ~          Error Diagnostic Message         ~
+ *  |                                           |
+ *  `-------------------------------------------' */
 struct pdu_error {
   u8 ver;
   u8 type;
   u16 error_code;
   u32 len;
-  u32 len_enc_pdu;
-  u8 rest[];
+  u32 len_enc_pdu;		/* Length of Encapsulated PDU */
+  u8 rest[];			/* Copy of Erroneous PDU
+				 * Length of Error Text
+				 * Error Diagnostic Message */
 };
 
 struct pdu_reset_query {
@@ -169,12 +212,26 @@ struct pdu_end_of_data_v1 {
   u32 expire_interval;
 };
 
+static const size_t min_pdu_size[] = {
+    [SERIAL_NOTIFY] = sizeof(struct pdu_serial_notify),
+    [SERIAL_QUERY] = sizeof(struct pdu_serial_query),
+    [RESET_QUERY] = sizeof(struct pdu_reset_query),
+    [CACHE_RESPONSE] = sizeof(struct pdu_cache_response),
+    [IPV4_PREFIX] = sizeof(struct pdu_ipv4),
+    [RESERVED] = sizeof(struct pdu_header),
+    [IPV6_PREFIX] = sizeof(struct pdu_ipv6),
+    [END_OF_DATA] = sizeof(struct pdu_end_of_data_v0),
+    [CACHE_RESET] = sizeof(struct pdu_cache_response),
+    [ROUTER_KEY] = sizeof(struct pdu_header), /* FIXME */
+    [ERROR] = 16,
+};
+
 static int rpki_send_error_pdu(struct rpki_cache *cache, const void *erroneous_pdu, const u32 err_pdu_len, const enum pdu_error_type error_code, const char *text, const u32 text_len);
 
 static inline enum
 pdu_type get_pdu_type(const void *pdu)
 {
-  return *((char *) pdu + 1);
+  return *((byte *) pdu + 1);
 }
 
 static void
@@ -190,16 +247,18 @@ rpki_pdu_to_network_byte_order(void *pdu)
   {
   case SERIAL_QUERY:
   {
+    /* Note that a session_id is converted using converting header->reserved */
     struct pdu_serial_query *sq_pdu = pdu;
     sq_pdu->serial_num = htonl(sq_pdu->serial_num);
-    /* Note that session_id isn't converted to host byte order nor during receiving */
     break;
   }
 
   case ERROR:
   {
-    struct pdu_error *err_pdu = pdu;
-    err_pdu->len_enc_pdu = htonl(err_pdu->len_enc_pdu);
+    struct pdu_error *err = pdu;
+    u32 *err_text_len = (u32 *)(err->rest + err->len_enc_pdu);
+    *err_text_len = htonl(*err_text_len);
+    err->len_enc_pdu = htonl(err->len_enc_pdu);
     break;
   }
 
@@ -218,13 +277,9 @@ rpki_pdu_header_to_host_byte_order(void *pdu)
 
   /* The ROUTER_KEY PDU has two 1 Byte fields instead of the 2 Byte reserved field. */
   if (header->type != ROUTER_KEY)
-  {
-    u16 reserved_tmp =  ntohs(header->reserved);
-    header->reserved = reserved_tmp;
-  }
+    header->reserved = ntohs(header->reserved);
 
-  u32 len_tmp = ntohl(header->len);
-  header->len = len_tmp;
+  header->len = ntohl(header->len);
 }
 
 static void
@@ -237,14 +292,15 @@ rpki_pdu_body_to_host_byte_order(void *pdu)
   {
   case SERIAL_NOTIFY:
   {
+    /* Note that a session_id is converted using converting header->reserved */
     struct pdu_serial_notify *sn_pdu = pdu;
-    /* Note that session_id isn't converted to network byte order nor during transmitting */
     sn_pdu->serial_num = ntohl(sn_pdu->serial_num);
     break;
   }
 
   case END_OF_DATA:
   {
+    /* Note that a session_id is converted using converting header->reserved */
     struct pdu_end_of_data_v0 *eod0 = pdu;
     eod0->serial_num = ntohl(eod0->serial_num); /* same either for version 1 */
 
@@ -277,8 +333,11 @@ rpki_pdu_body_to_host_byte_order(void *pdu)
 
   case ERROR:
   {
+    /* Note that a error_code is converted using converting header->reserved */
     struct pdu_error *err = pdu;
     err->len_enc_pdu = ntohl(err->len_enc_pdu);
+    u32 *err_text_len = (u32 *)(err->rest + err->len_enc_pdu);
+    *err_text_len = htonl(*err_text_len);
     break;
   }
 
@@ -291,8 +350,21 @@ rpki_pdu_body_to_host_byte_order(void *pdu)
   }
 }
 
+/**
+ * rpki_convert_pdu_back_to_network_byte_order - convert host-byte order PDU back to network-byte order
+ * @pdu: host-byte order PDU
+ *
+ * Assumed: |A == ntohl(ntohl(A))|
+ */
 static void
-rpki_log_packet(struct rpki_cache *cache, const void *pdu, const size_t len, const enum rpki_transmit_type action)
+rpki_convert_pdu_back_to_network_byte_order(void *pdu)
+{
+  rpki_pdu_header_to_host_byte_order(pdu);
+  rpki_pdu_body_to_host_byte_order(pdu);
+}
+
+static void
+rpki_log_packet(struct rpki_cache *cache, const void *pdu, const enum rpki_transmit_type action)
 {
   if (!(cache->p->p.debug & D_PACKETS))
     return;
@@ -342,6 +414,13 @@ rpki_log_packet(struct rpki_cache *cache, const void *pdu, const size_t len, con
     bsnprintf(detail, sizeof(detail), "(ignored)");
     break;
 
+  case ERROR:
+  {
+    const struct pdu_error *err = pdu;
+    bsnprintf(detail, sizeof(detail), "(type: %s)", str_pdu_error_type[err->error_code]);
+    break;
+  }
+
   default:
     *detail = '\0';
   }
@@ -357,7 +436,7 @@ rpki_log_packet(struct rpki_cache *cache, const void *pdu, const size_t len, con
 
 #if defined(LOCAL_DEBUG) || defined(GLOBAL_DEBUG)
   int seq = 0;
-  for(const byte *c = pdu; c != pdu + len; c++)
+  for(const byte *c = pdu; c != pdu + header->len; c++)
   {
     if ((seq % 4) == 0)
       DBG("%2d: ", seq);
@@ -378,34 +457,23 @@ rpki_send_pdu(struct rpki_cache *cache, const void *pdu, const uint len)
   struct rpki_proto *p = cache->p;
   sock *sk = cache->tr_sock->sk;
 
-  if (!sk)
+  rpki_log_packet(cache, pdu, RPKI_SEND);
+
+  if (sk->tbuf != sk->tpos)
   {
-    RPKI_WARN(p, "Want send a %s packet, but the bird socket is NULL!", str_pdu_type[get_pdu_type(pdu)]);
+    RPKI_WARN(p, "Old packet overwritten in TX buffer");
+  }
+
+  if (len > sk->tbsize)
+  {
+    RPKI_WARN(p, "%u bytes is too much for send", len);
     ASSERT(0);
     return RPKI_ERROR;
   }
 
-  if (sk->fd < 0)
-  {
-    RPKI_WARN(p, "Want send a %s packet, but the bird socket FD is %d!", str_pdu_type[get_pdu_type(pdu)], sk->fd);
-    ASSERT(0);
-    return RPKI_ERROR;
-  }
+  memcpy(sk->tbuf, pdu, len);
+  rpki_pdu_to_network_byte_order(sk->tbuf);
 
-  if (cache->state == RPKI_CS_SHUTDOWN)
-  {
-    RPKI_WARN(p, "Want send a %s packet, but the protocol state is SHUTDOWN!", str_pdu_type[get_pdu_type(pdu)]);
-    ASSERT(0);
-    return RPKI_ERROR;
-  }
-
-  rpki_log_packet(cache, pdu, len, RPKI_SEND);
-
-  byte pdu_converted[len];
-  memcpy(pdu_converted, pdu, len);
-  rpki_pdu_to_network_byte_order(pdu_converted);
-
-  sk->tbuf = pdu_converted;
   if (!sk_send(sk, len))
   {
     DBG("Cannot send just the whole data. It will be sent using a call of tx_hook()");
@@ -415,24 +483,30 @@ rpki_send_pdu(struct rpki_cache *cache, const void *pdu, const uint len)
 }
 
 /**
- * rpki_check_receive_packet - Make a basic validation of received RPKI PDU header
- * @cache: cache connection
- * @pdu: RPKI PDU
- * @len: length of @pdu
+ * rpki_check_receive_packet - make a basic validation of received RPKI PDU header
+ * @cache: cache connection instance
+ * @pdu: RPKI PDU in network byte order
  *
- * It checks protocol version, PDU type and PDU size. If all good then
- * function returns %RPKI_SUCCESS otherwise sends Error PDU and returns %RPKI_ERROR
+ * This function checks protocol version, PDU type, version and size. If all is all right then
+ * function returns |RPKI_SUCCESS| otherwise sends Error PDU and returns
+ * |RPKI_ERROR|.
  */
 static int
-rpki_check_receive_packet(struct rpki_cache *cache, const void *pdu, const size_t len)
+rpki_check_receive_packet(struct rpki_cache *cache, const void *pdu)
 {
   struct rpki_proto *p = cache->p;
   int error = RPKI_SUCCESS;
 
-  /* Header in hostbyte order, retain original received pdu, in case we need to detach it to an error pdu */
+  /* Header is in host byte order, retain original received pdu, in case we need to detach it to an error pdu */
   struct pdu_header header;
   memcpy(&header, pdu, sizeof(header));
   rpki_pdu_header_to_host_byte_order(&header);
+
+  /*
+   * Minimal and maximal allowed PDU size is treated in rpki_rx_hook() function.
+   * @header.len corresponds to number of bytes of @pdu and
+   * it is in range from RPKI_PDU_HEADER_LEN to RPKI_PDU_MAX_LEN bytes.
+   */
 
   /* Do not handle error PDUs here, leave this task to rpki_handle_error_pdu() */
   if (header.ver != cache->version && header.type != ERROR)
@@ -461,75 +535,30 @@ rpki_check_receive_packet(struct rpki_cache *cache, const void *pdu, const size_
       {
         /* If this is not the first PDU we have received, something is wrong with
          * the server implementation -> Error */
-        error = UNSUPPORTED_PROTOCOL_VER;
-        goto error;
+	CACHE_TRACE(D_PACKETS, cache, "PDU with unsupported Protocol version received");
+	rpki_send_error_pdu(cache, pdu, header.len, UNSUPPORTED_PROTOCOL_VER, NULL, 0);
+	return RPKI_ERROR;
       }
     }
   }
 
   if ((header.type > 10) || (header.ver == RPKI_VERSION_0 && header.type == ROUTER_KEY))
   {
-    error = UNSUPPORTED_PDU_TYPE;
-    goto error;
+    CACHE_DBG(cache, "Unsupported PDU type %u received", header.type);
+    rpki_send_error_pdu(cache, pdu, header.len, UNSUPPORTED_PDU_TYPE, NULL, 0);
+    return RPKI_ERROR;
   }
 
-  if (header.len < sizeof(header))
+  if (header.len < min_pdu_size[header.type])
   {
-    error = CORRUPT_DATA;
-    goto error;
-  }
-  else if (header.len > RPKI_PDU_MAX_LEN)
-  {
-    error = PDU_TOO_BIG;
-    goto error;
-  }
-
-  if (header.type == IPV4_PREFIX || header.type == IPV6_PREFIX)
-  {
-    if (((struct pdu_ipv4 *) pdu)->zero != 0)
-      CACHE_TRACE(D_PACKETS, cache, "Warning: Zero field of received Prefix PDU doesn't contain 0");
+    char txt[128];
+    int txt_len = bsnprintf(txt, sizeof(txt), "Received %s packet with %d bytes, but expected at least %d bytes", str_pdu_type[header.type], header.len, min_pdu_size[header.type]);
+    CACHE_TRACE(D_PACKETS, cache, "%s", txt);
+    rpki_send_error_pdu(cache, pdu, header.len, CORRUPT_DATA, txt, txt_len + 1);
+    return RPKI_ERROR;
   }
 
   return RPKI_SUCCESS;
-
- error:
-
-  /* Send error msg to server, including unmodified pdu header (pdu variable instead header) */
-
-  switch (error)
-  {
-  case CORRUPT_DATA:
-  {
-    const char txt[] = "Corrupt data received, length value in PDU is too small";
-    CACHE_TRACE(D_PACKETS, cache, "%s", txt);
-    rpki_send_error_pdu(cache, pdu, sizeof(header), CORRUPT_DATA, txt, sizeof(txt));
-    break;
-  }
-
-  case PDU_TOO_BIG:
-  {
-    char txt[64];
-    bsnprintf(txt, sizeof(txt),"PDU too big, max. PDU size is: %u bytes", RPKI_PDU_MAX_LEN);
-    CACHE_TRACE(D_PACKETS, cache, "%s", txt);
-    rpki_send_error_pdu(cache, pdu, sizeof(header), CORRUPT_DATA, txt, strlen(txt)+1);
-    break;
-  }
-
-  case UNSUPPORTED_PDU_TYPE:
-    CACHE_DBG(cache, "Unsupported PDU type %zu received", header.type);
-    rpki_send_error_pdu(cache, pdu, header.len, UNSUPPORTED_PDU_TYPE, NULL, 0);
-    break;
-
-  case UNSUPPORTED_PROTOCOL_VER:
-    CACHE_TRACE(D_PACKETS, cache, "PDU with unsupported Protocol version received");
-    rpki_send_error_pdu(cache, pdu, header.len, UNSUPPORTED_PROTOCOL_VER, NULL, 0);
-    break;
-
-  default:
-    bug("Uncaught error");
-  }
-
-  return RPKI_ERROR;
 }
 
 static int
@@ -537,40 +566,42 @@ rpki_handle_error_pdu(struct rpki_cache *cache, const void *buf)
 {
   const struct pdu_error *pdu = buf;
 
-  const u32 len_err_txt = ntohl(*((u32 *) (pdu->rest + pdu->len_enc_pdu)));
+  const u32 len_err_txt = *((u32 *) (pdu->rest + pdu->len_enc_pdu));
   if (len_err_txt > 0)
   {
-    if ((sizeof(pdu->ver) + sizeof(pdu->type) + sizeof(pdu->error_code) + sizeof(pdu->len) + sizeof(pdu->len_enc_pdu) + pdu->len_enc_pdu + 4 + len_err_txt) != pdu->len)
-      CACHE_TRACE(D_PACKETS, cache, "Error: Length of error text contains an incorrect value");
-    else
+    size_t expected_len =
+	sizeof(pdu->ver) +
+	sizeof(pdu->type) +
+	sizeof(pdu->error_code) +
+	sizeof(pdu->len) +
+	sizeof(pdu->len_enc_pdu) +
+	pdu->len_enc_pdu +
+	4 + len_err_txt;
+
+    if (expected_len == pdu->len)
     {
       char txt[len_err_txt + 1];
       char *pdu_txt = (char *) pdu->rest + pdu->len_enc_pdu + 4;
       bsnprintf(txt, sizeof(txt), "%s", pdu_txt);
       CACHE_TRACE(D_PACKETS, cache, "Error PDU included the following error msg: '%s'", txt);
     }
+    else
+    {
+      CACHE_TRACE(D_PACKETS, cache, "Unable print error description from Error PDU because of an incorrect length of packet");
+    }
   }
 
   switch (pdu->error_code)
   {
   case CORRUPT_DATA:
-    CACHE_TRACE(D_PACKETS, cache, "Corrupt data received");
-    rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
-    break;
-
   case INTERNAL_ERROR:
-    CACHE_TRACE(D_PACKETS, cache, "Internal error on server-side");
+  case INVALID_REQUEST:
+  case UNSUPPORTED_PDU_TYPE:
     rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
     break;
 
   case NO_DATA_AVAIL:
-    CACHE_TRACE(D_PACKETS, cache, "No data available");
     rpki_cache_change_state(cache, RPKI_CS_ERROR_NO_DATA_AVAIL);
-    break;
-
-  case INVALID_REQUEST:
-    CACHE_TRACE(D_PACKETS, cache, "Invalid request from client");
-    rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
     break;
 
   case UNSUPPORTED_PROTOCOL_VER:
@@ -579,21 +610,16 @@ rpki_handle_error_pdu(struct rpki_cache *cache, const void *buf)
 	pdu->ver >= RPKI_MIN_VERSION &&
 	pdu->ver < cache->version)
     {
-      CACHE_TRACE(D_EVENTS, cache, "Downgrading from protocol version %i to version %i", cache->version, pdu->ver);
+      CACHE_TRACE(D_EVENTS, cache, "Downgrading from protocol version %d to version %d", cache->version, pdu->ver);
       cache->version = pdu->ver;
       rpki_cache_change_state(cache, RPKI_CS_FAST_RECONNECT);
     }
     else
     {
       CACHE_TRACE(D_PACKETS, cache, "Got UNSUPPORTED_PROTOCOL_VER error PDU with invalid values, " \
-		  "current version: %i, PDU version: %i", cache->version, pdu->ver);
+		  "current version: %d, PDU version: %d", cache->version, pdu->ver);
       rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
     }
-    break;
-
-  case UNSUPPORTED_PDU_TYPE:
-    CACHE_TRACE(D_PACKETS, cache, "Client set unsupported PDU type");
-    rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
     break;
 
   default:
@@ -619,22 +645,24 @@ rpki_handle_serial_notify_pdu(struct rpki_cache *cache, const struct pdu_serial_
     return;
   }
 
-  /* XXX Serial number should be compared using method RFC 1982 (3.2).
-   * However we didn't even convert the serial numbers network->host byte order. */
+  /* XXX Serial number should be compared using method RFC 1982 (3.2) */
   if (cache->serial_num != pdu->serial_num)
     rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
 }
 
 static int
-rpki_handle_cache_response_pdu(struct rpki_cache *cache, const struct pdu_cache_response *pdu)
+rpki_handle_cache_response_pdu(struct rpki_cache *cache, struct pdu_cache_response *pdu)
 {
   if (cache->request_session_id)
   {
     if (cache->last_update != 0)
     {
-      /* This point is before a importing of new records from remote cache server.
-         This isn't the first sync and we already received records.
-         So start a refresh cycle and receive new records. */
+      /*
+       * This isn't the first sync and we already received records. This point
+       * is after Reset Query and before importing new records from cache
+       * server. We need to load new ones and kick out missing ones.  So start
+       * a refresh cycle.
+       */
       if (cache->roa4_channel)
 	rt_refresh_begin(cache->roa4_channel->table, cache->roa4_channel);
       if (cache->roa6_channel)
@@ -650,8 +678,9 @@ rpki_handle_cache_response_pdu(struct rpki_cache *cache, const struct pdu_cache_
     if (cache->session_id != pdu->session_id)
     {
       char txt[100];
-      bsnprintf(txt, sizeof(txt), "Wrong session_id %u in Cache Response PDU", pdu->session_id);
-      rpki_send_error_pdu(cache, NULL, 0, CORRUPT_DATA, txt, strlen(txt)+1);
+      int txt_len = bsnprintf(txt, sizeof(txt), "Wrong session_id %u in Cache Response PDU", pdu->session_id);
+      rpki_convert_pdu_back_to_network_byte_order(pdu);
+      rpki_send_error_pdu(cache, pdu, ntohl(pdu->len), CORRUPT_DATA, txt, txt_len + 1);
       rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
       return RPKI_ERROR;
     }
@@ -692,7 +721,7 @@ rpki_prefix_pdu_2_net_addr(const void *pdu)
 }
 
 static int
-rpki_handle_prefix_pdu(struct rpki_cache *cache, const void *pdu)
+rpki_handle_prefix_pdu(struct rpki_cache *cache, void *pdu)
 {
   struct channel *channel = NULL;
 
@@ -712,6 +741,8 @@ rpki_handle_prefix_pdu(struct rpki_cache *cache, const void *pdu)
     return RPKI_ERROR;
   }
 
+  cache->last_rx_prefix = now;
+
   switch (((struct pdu_ipv4 *) pdu)->flags)
   {
   case RPKI_ADD_FLAG:
@@ -725,9 +756,9 @@ rpki_handle_prefix_pdu(struct rpki_cache *cache, const void *pdu)
   default:
   {
     const char txt[] = "Prefix PDU with invalid flags value received";
-    size_t pdu_size = (type == IPV4_PREFIX ? sizeof(struct pdu_ipv4) : sizeof(struct pdu_ipv6));
     CACHE_DBG(cache, "%s", txt);
-    rpki_send_error_pdu(cache, pdu, pdu_size, CORRUPT_DATA, txt, sizeof(txt));
+    rpki_convert_pdu_back_to_network_byte_order(pdu);
+    rpki_send_error_pdu(cache, pdu, ntohl(((struct pdu_header *)pdu)->len), CORRUPT_DATA, txt, sizeof(txt));
     return RPKI_ERROR;
   }
   }
@@ -747,10 +778,21 @@ rpki_check_interval(struct rpki_cache *cache, const char *(check_fn)(uint), uint
 }
 
 static void
-rpki_handle_end_of_data_pdu(struct rpki_cache *cache, const void *pdu)
+rpki_handle_end_of_data_pdu(struct rpki_cache *cache, void *pdu)
 {
   const struct pdu_end_of_data_v1 *eod_pdu = pdu;
   const struct rpki_config *cf =  (void *) cache->p->p.cf;
+
+  if (eod_pdu->session_id != cache->session_id)
+  {
+    char txt[67];
+    int txt_len = bsnprintf(txt, sizeof(txt), "Received Session ID %u, but expected %u", eod_pdu->session_id, cache->session_id);
+    CACHE_TRACE(D_EVENTS, cache, "%s", txt);
+    rpki_convert_pdu_back_to_network_byte_order(pdu);
+    rpki_send_error_pdu(cache, pdu, ntohl(eod_pdu->len), CORRUPT_DATA, txt, txt_len + 1);
+    rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
+    return;
+  }
 
   if (eod_pdu->ver == RPKI_VERSION_1)
   {
@@ -764,44 +806,40 @@ rpki_handle_end_of_data_pdu(struct rpki_cache *cache, const void *pdu)
       cache->expire_interval = eod_pdu->expire_interval;
 
     CACHE_TRACE(D_EVENTS, cache, "New interval values: "
-		"refresh: %us, "
-		"retry: %us, "
-		"expire: %us",
-	       cache->refresh_interval, cache->retry_interval, cache->expire_interval);
-  }
-
-  if (eod_pdu->session_id != cache->session_id)
-  {
-    char txt[67];
-    bsnprintf(txt, sizeof(txt), "Received Session ID %u, but expected %u", eod_pdu->session_id, cache->session_id);
-    CACHE_TRACE(D_EVENTS, cache, "%s", txt);
-    rpki_send_error_pdu(cache, pdu, eod_pdu->len, CORRUPT_DATA, txt, strlen(txt) + 1);
-    rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
+		"refresh: %s%us, "
+		"retry: %s%us, "
+		"expire: %s%us",
+		(cf->keep_refresh_interval ? "keeps " : ""), cache->refresh_interval,
+		(cf->keep_retry_interval ? "keeps " : ""),   cache->retry_interval,
+		(cf->keep_expire_interval ? "keeps " : ""),  cache->expire_interval);
   }
 
   if (cache->refresh_channels)
   {
     cache->refresh_channels = 0;
     if (cache->roa4_channel)
-      rt_refresh_begin(cache->roa4_channel->table, cache->roa4_channel);
+      rt_refresh_end(cache->roa4_channel->table, cache->roa4_channel);
     if (cache->roa6_channel)
-      rt_refresh_begin(cache->roa6_channel->table, cache->roa6_channel);
+      rt_refresh_end(cache->roa6_channel->table, cache->roa6_channel);
   }
 
   cache->last_update = now;
   cache->serial_num = eod_pdu->serial_num;
   rpki_cache_change_state(cache, RPKI_CS_ESTABLISHED);
-  rpki_schedule_next_refresh(cache);
-  rpki_schedule_next_expire_check(cache);
 }
 
+/**
+ * rpki_rx_packet - process a received RPKI PDU
+ * @cache: RPKI connection instance
+ * @pdu: a RPKI PDU in network byte order
+ */
 static void
-rpki_rx_packet(struct rpki_cache *cache, void *pdu, uint len)
+rpki_rx_packet(struct rpki_cache *cache, void *pdu)
 {
   struct rpki_proto *p = cache->p;
   enum pdu_type type = get_pdu_type(pdu);
 
-  if (rpki_check_receive_packet(cache, pdu, len) == RPKI_ERROR)
+  if (rpki_check_receive_packet(cache, pdu) == RPKI_ERROR)
   {
     rpki_cache_change_state(cache, RPKI_CS_ERROR_FATAL);
     return;
@@ -809,7 +847,7 @@ rpki_rx_packet(struct rpki_cache *cache, void *pdu, uint len)
 
   rpki_pdu_header_to_host_byte_order(pdu);
   rpki_pdu_body_to_host_byte_order(pdu);
-  rpki_log_packet(cache, pdu, len, RPKI_RECV);
+  rpki_log_packet(cache, pdu, RPKI_RECV);
 
   switch (type)
   {
@@ -854,25 +892,6 @@ rpki_rx_packet(struct rpki_cache *cache, void *pdu, uint len)
   };
 }
 
-static int
-rpki_open_channel(struct channel *cs)
-{
-  if (cs)
-  {
-    if (cs->channel_state != CS_FLUSHING)
-    {
-      cs->disabled = 0;	/* XXX Force enable */
-      channel_open(cs);
-    }
-    else
-    {
-      return 0;
-    }
-  }
-
-  return 1;
-}
-
 int
 rpki_rx_hook(struct birdsock *sk, int size)
 {
@@ -883,12 +902,6 @@ rpki_rx_hook(struct birdsock *sk, int size)
   byte *end = pkt_start + size;
 
   DBG("rx hook got %d bytes \n", size);
-
-  if (!rpki_open_channel(cache->roa4_channel) || !rpki_open_channel(cache->roa6_channel))
-  {
-    DBG("Channels are busy, must wait \n");
-    return 0; /* Channels are busy, must wait, don't purge sk->rbuf */
-  }
 
   while (end >= pkt_start + RPKI_PDU_HEADER_LEN)
   {
@@ -905,10 +918,10 @@ rpki_rx_hook(struct birdsock *sk, int size)
     if (end < pkt_start + header.len)
       break;
 
-    rpki_rx_packet(cache, pkt_start, header.len);
+    rpki_rx_packet(cache, pkt_start);
 
     /* It is possible that bird socket was freed/closed */
-    if (sk != cache->tr_sock->sk)
+    if (p->p.proto_state == PS_DOWN || sk != cache->tr_sock->sk)
       return 0;
 
     pkt_start += header.len;
@@ -929,7 +942,7 @@ rpki_err_hook(struct birdsock *sk, int error_num)
 {
   struct rpki_cache *cache = sk->data;
 
-  /* zero means EOF */
+  /* Zero means EOF */
   if (!error_num)
     return;
 
@@ -974,7 +987,18 @@ rpki_connected_hook(sock *sk)
   rpki_cache_change_state(cache, RPKI_CS_SYNC_START);
 }
 
-int
+/**
+ * rpki_send_error_pdu - send RPKI Error PDU
+ * @cache: RPKI connection instance
+ * @erroneous_pdu: optional network byte-order PDU that invokes Error by us or NULL
+ * @err_pdu_len: length of @erroneous_pdu
+ * @error_code: PDU Error type
+ * @text: optional description text of error or NULL
+ * @text_len: length of @text
+ *
+ * This function prepares Error PDU and sends it to a cache server.
+ */
+static int
 rpki_send_error_pdu(struct rpki_cache *cache, const void *erroneous_pdu, const u32 err_pdu_len, const enum pdu_error_type error_code, const char *text, const u32 text_len)
 {
   /* Don't send errors for erroneous error PDUs */
@@ -986,16 +1010,19 @@ rpki_send_error_pdu(struct rpki_cache *cache, const void *erroneous_pdu, const u
 
   u32 pdu_size = 16 + err_pdu_len + text_len;
   char pdu[pdu_size];
+  memset(pdu, sizeof(pdu), 0);
+
   struct pdu_error *e = (void *) pdu;
   e->ver = cache->version;
   e->type = ERROR;
-  e->error_code = error_code;	/* htons-ed in rpki_pdu_to_network_byte_order() */
-  e->len = pdu_size;		/* htonl-ed in rpki_pdu_to_network_byte_order() */
-  e->len_enc_pdu = err_pdu_len; /* htonl-ed in rpki_pdu_to_network_byte_order() */
+  e->error_code = error_code;
+  e->len = pdu_size;
 
+  e->len_enc_pdu = err_pdu_len;
   if (err_pdu_len > 0)
     memcpy(e->rest, erroneous_pdu, err_pdu_len);
-  *(e->rest + err_pdu_len) = htonl(text_len);
+
+  *((u32 *)(e->rest + err_pdu_len)) = text_len;
   if (text_len > 0)
     memcpy(e->rest + err_pdu_len + 4, text, text_len);
 
@@ -1013,10 +1040,12 @@ rpki_send_serial_query(struct rpki_cache *cache)
       .serial_num = cache->serial_num
   };
 
-  if (rpki_send_pdu(cache, &pdu, sizeof(pdu)) != RPKI_SUCCESS) {
+  if (rpki_send_pdu(cache, &pdu, sizeof(pdu)) != RPKI_SUCCESS)
+  {
     rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
     return RPKI_ERROR;
   }
+
   return RPKI_SUCCESS;
 }
 
@@ -1029,9 +1058,11 @@ rpki_send_reset_query(struct rpki_cache *cache)
       .len = 8,
   };
 
-  if (rpki_send_pdu(cache, &pdu, sizeof(pdu)) != RPKI_SUCCESS) {
+  if (rpki_send_pdu(cache, &pdu, sizeof(pdu)) != RPKI_SUCCESS)
+  {
     rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
     return RPKI_ERROR;
   }
+
   return RPKI_SUCCESS;
 }

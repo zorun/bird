@@ -56,7 +56,7 @@ rpki_hostname_autoresolv(const char *host)
 }
 
 /**
- * rpki_tr_open - Prepare and open a socket connection
+ * rpki_tr_open - prepare and open a socket connection
  * @tr: initialized transport socket
  *
  * Prepare and open a socket connection specified by @tr that must be initialized before.
@@ -100,7 +100,7 @@ rpki_tr_open(struct rpki_tr_sock *tr)
 }
 
 /**
- * rpki_tr_close - Close socket and prepare it for possible next open
+ * rpki_tr_close - close socket and prepare it for possible next open
  * @tr: successfully opened transport socket
  *
  * Close socket and free resources.
@@ -108,14 +108,17 @@ rpki_tr_open(struct rpki_tr_sock *tr)
 void
 rpki_tr_close(struct rpki_tr_sock *tr)
 {
-  if (tr->ident != NULL)
+  if (tr->ident)
   {
     mb_free((char *) tr->ident);
     tr->ident = NULL;
   }
 
-  rfree(tr->sk);
-  tr->sk = NULL;
+  if (tr->sk)
+  {
+    rfree(tr->sk);
+    tr->sk = NULL;
+  }
 }
 
 /**

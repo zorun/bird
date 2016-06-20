@@ -14,8 +14,6 @@
 
 #include <arpa/inet.h>
 
-#define RPKI_RX_BUFFER_SIZE	65536
-#define RPKI_TX_BUFFER_SIZE	65536
 #define RPKI_PDU_HEADER_LEN 	8
 
 /* A Error PDU size is the biggest (has encapsulate PDU inside):
@@ -27,6 +25,10 @@
  * 	------------
  * 	= 848 bytes (Maximal expected PDU size) */
 #define RPKI_PDU_MAX_LEN	848
+
+/* RX buffer size has a great impact to scheduler granularity */
+#define RPKI_RX_BUFFER_SIZE	4096
+#define RPKI_TX_BUFFER_SIZE	RPKI_PDU_MAX_LEN
 
 /* Return values */
 enum rpki_rtvals {

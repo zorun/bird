@@ -72,7 +72,7 @@ rpki_tr_ssh_ident(struct rpki_tr_sock *tr)
 }
 
 /**
- * rpki_tr_ssh_init - Initializes the RPKI transport structure for a SSH connection
+ * rpki_tr_ssh_init - initializes the RPKI transport structure for a SSH connection
  * @tr: allocated RPKI transport structure
  */
 void

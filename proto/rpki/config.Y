@@ -19,7 +19,7 @@ static void
 rpki_check_unused_hostname(void)
 {
   if (RPKI_CFG->hostname != NULL)
-    cf_error("Only one remote cache server per protocol allowed");
+    cf_error("Only one cache server per protocol allowed");
 }
 
 static void

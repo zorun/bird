@@ -67,7 +67,7 @@ rpki_tr_tcp_ident(struct rpki_tr_sock *tr)
 }
 
 /**
- * rpki_tr_tcp_init - Initializes the RPKI transport structure for a TCP connection
+ * rpki_tr_tcp_init - initializes the RPKI transport structure for a TCP connection
  * @tr: allocated RPKI transport structure
  */
 void

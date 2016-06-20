@@ -3623,32 +3623,33 @@ protocol rip {
 }
 </code>
 
-<sect>RPKI-RTR
+<sect>RPKI
 
 <sect1>Introduction
 
 <p>The Resource Public Key Infrastructure (RPKI) is mechanism for origin
 validation of BGP routes (RFC 6480). BIRD supports only so-called RPKI-based
-origin validation. It uses some of the RPKI data to allow a router to verify
-that the autonomous system announcing an IP address prefix is in fact
-authorized to do so. This is not crypto checked so can be violated. But it
-should prevent the vast majority of accidental hijackings on the Internet
-today, e.g. the famous Pakastani accidental announcement of YouTube's address
-space.
+origin validation. There is implemented RPKI to Router (RPKI-RTR) protocol (RFC
+6810).  It uses some of the RPKI data to allow a router to verify that the
+autonomous system announcing an IP address prefix is in fact authorized to do
+so. This is not crypto checked so can be violated. But it should prevent the
+vast majority of accidental hijackings on the Internet today, e.g. the famous
+Pakastani accidental announcement of YouTube's address space.
 
-<p>The RPKI-RTR protocol receives and maintains a set of ROAs from remote cache
-server (also called validator) (RFC 6810). You can validate routes using
-function <cf/roa_check()/ and setting a import filter at the BGP protocol. We
-should re-validate all of affected routes after RPKI update (RFC 6811), but we
-don't support it yet! You can use a BIRD client command <cf>reload in
-<m/bgp_protocol_name/</cf> for manual call of revalidation of all routes.
+<p>The RPKI-RTR protocol receives and maintains a set of ROAs from a cache
+server (also called validator). You can validate routes (RFC 6483) using
+function <cf/roa_check()/ in filter and set it as import filter at the BGP
+protocol. BIRD should re-validate all of affected routes after RPKI update by
+RFC 6811, but we don't support it yet! You can use a BIRD's client command
+<cf>reload in <m/bgp_protocol_name/</cf> for manual call of revalidation of all
+routes.
 
 <sect1>Supported transports
 <itemize>
-        <item>Unprotected transport over TCP using a port 323. The cache server
+        <item>Unprotected transport over TCP uses a port 323. The cache server
         and BIRD router should be on the same trusted and controlled network
         for security reasons.
-        <item>SSHv2 encrypted transport connection using the normal SSH port
+        <item>SSHv2 encrypted transport connection uses the normal SSH port
         22.
 </itemize>
 
@@ -3696,14 +3697,16 @@ tables.
         <tag>refresh [keep] <m/num/</tag> Time period in seconds. Tells how
         long to wait before next attempting to poll the cache using a Serial
         Query or a Reset Query packet. Must be lower than 86400 seconds (one
-        day). A keyword <cf/keep/ suppresses updating this value by a
-        cache server.
+        day). Too low value can caused a false positive detection of
+        network connection problems.  A keyword <cf/keep/ suppresses updating
+        this value by a cache server.
         Default: 3600 seconds
 
         <tag>retry [keep] <m/num/</tag> Time period in seconds between a failed
         Serial/Reset Query and a next attempt.  Maximum allowed value is 7200
-        seconds (two hours). A keyword <cf/keep/ suppresses updating this value
-        by a cache server.
+        seconds (two hours). Too low value can caused a false positive
+        detection of network connection problems.  A keyword <cf/keep/
+        suppresses updating this value by a cache server.
         Default: 600 seconds
 
         <tag>expire [keep] <m/num/</tag> Time period in seconds. Received
@@ -3745,11 +3748,16 @@ roa6 table r6;
 
 protocol rpki {
 	debug all;
+	
 	roa4 { table r4; };
 	roa6 { table r6; };
 
 	# Please, do not use rpki-validator.realmv6.org in production
 	remote "rpki-validator.realmv6.org" port 8282;
+	
+	retry keep 5;
+	refresh keep 30;
+	expire 600;
 }
 
 filter peer_in {
@@ -3777,14 +3785,18 @@ roa6 table r6;
 
 protocol rpki {
 	debug all;
+	
 	roa4 { table r4; };
 	roa6 { table r6; };
+	
 	remote 127.0.0.1 port 2345;
 	transport ssh {
 		bird private key "/home/birdgeek/.ssh/id_rsa";
 		remote public key "/home/birdgeek/.ssh/known_hosts";
 		user "birdgeek";
 	};
+	
+	# Default interval values
 }
 </code>
 
