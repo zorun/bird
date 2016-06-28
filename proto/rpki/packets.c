@@ -130,7 +130,7 @@ struct pdu_ipv4 {
   u8 prefix_len;
   u8 max_prefix_len;
   u8 zero;
-  u32 prefix;
+  ip4_addr prefix;
   u32 asn;
 } PACKED;
 
@@ -143,7 +143,7 @@ struct pdu_ipv6 {
   u8 prefix_len;
   u8 max_prefix_len;
   u8 zero;
-  u32 prefix[4];
+  ip6_addr prefix;
   u32 asn;
 } PACKED;
 
@@ -318,7 +318,7 @@ rpki_pdu_body_to_host_byte_order(void *pdu)
   case IPV4_PREFIX:
   {
     struct pdu_ipv4 *ipv4 = pdu;
-    ipv4->prefix = ntohl(ipv4->prefix);
+    ipv4->prefix = ip4_ntoh(ipv4->prefix);
     ipv4->asn = ntohl(ipv4->asn);
     break;
   }
@@ -326,8 +326,7 @@ rpki_pdu_body_to_host_byte_order(void *pdu)
   case IPV6_PREFIX:
   {
     struct pdu_ipv6 *ipv6 = pdu;
-    ip6_addr addr6 = ip6_ntoh(ip6_build(ipv6->prefix[0], ipv6->prefix[1], ipv6->prefix[2], ipv6->prefix[3]));
-    memcpy(ipv6->prefix, &addr6, sizeof(ipv6->prefix));
+    ipv6->prefix = ip6_ntoh(ipv6->prefix);
     ipv6->asn = ntohl(ipv6->asn);
     break;
   }
@@ -398,15 +397,14 @@ rpki_log_packet(struct rpki_cache *cache, const void *pdu, const enum rpki_trans
   case IPV4_PREFIX:
   {
     const struct pdu_ipv4 *ipv4 = pdu;
-    bsnprintf(detail, sizeof(detail), "(%I4/%u-%u AS%u)", ip4_from_u32(ipv4->prefix), ipv4->prefix_len, ipv4->max_prefix_len, ipv4->asn);
+    bsnprintf(detail, sizeof(detail), "(%I4/%u-%u AS%u)", ipv4->prefix, ipv4->prefix_len, ipv4->max_prefix_len, ipv4->asn);
     break;
   }
 
   case IPV6_PREFIX:
   {
     const struct pdu_ipv6 *ipv6 = pdu;
-    ip6_addr a = ip6_build(ipv6->prefix[0], ipv6->prefix[1], ipv6->prefix[2], ipv6->prefix[3]);
-    bsnprintf(detail, sizeof(detail), "(%I6/%u-%u AS%u)", a, ipv6->prefix_len, ipv6->max_prefix_len, ipv6->asn);
+    bsnprintf(detail, sizeof(detail), "(%I6/%u-%u AS%u)", ipv6->prefix, ipv6->prefix_len, ipv6->max_prefix_len, ipv6->asn);
     break;
   }
 
