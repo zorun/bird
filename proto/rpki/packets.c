@@ -744,7 +744,7 @@ rpki_handle_prefix_pdu(struct rpki_cache *cache, void *pdu)
 
   cache->last_rx_prefix = now;
 
-  switch (((struct pdu_ipv4 *) pdu)->flags)
+  switch ((((struct pdu_ipv4 *) pdu)->flags) & 0x1)
   {
   case RPKI_ADD_FLAG:
     rpki_table_add_roa(cache, channel, &addr);
@@ -753,15 +753,6 @@ rpki_handle_prefix_pdu(struct rpki_cache *cache, void *pdu)
   case RPKI_DELETE_FLAG:
     rpki_table_remove_roa(cache, channel, &addr);
     break;
-
-  default:
-  {
-    const char txt[] = "Prefix PDU with invalid flags value received";
-    CACHE_DBG(cache, "%s", txt);
-    rpki_convert_pdu_back_to_network_byte_order(pdu);
-    rpki_send_error_pdu(cache, pdu, ntohl(((struct pdu_header *)pdu)->len), CORRUPT_DATA, txt, sizeof(txt));
-    return RPKI_ERROR;
-  }
   }
 
   return RPKI_SUCCESS;
