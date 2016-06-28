@@ -120,8 +120,6 @@ rpki_table_add_roa(struct rpki_cache *cache, struct channel *channel, const net_
 {
   struct rpki_proto *p = cache->p;
 
-  net *n = net_get(channel->table, &pfxr->n);
-
   rta a0 = {
       .src = p->p.main_source,
       .source = RTS_RPKI,
@@ -133,7 +131,6 @@ rpki_table_add_roa(struct rpki_cache *cache, struct channel *channel, const net_
   rta *a = rta_lookup(&a0);
   rte *e = rte_get_temp(a);
 
-  e->net = n;
   e->pflags = 0;
 
   rte_update2(channel, &pfxr->n, e, a0.src);
