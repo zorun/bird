@@ -158,7 +158,7 @@ void rpki_check_config(struct rpki_config *cf);
 #define CACHE_TRACE(level,cache,msg,args...)				\
     do {								\
       if ((cache)->p->p.debug & level)					\
-        RPKI_LOG(L_TRACE, (cache)->p, "%s [%s] " msg, rpki_get_cache_ident(cache), rpki_cache_state_to_str((cache)->state), ## args); \
+        RPKI_LOG(L_TRACE, (cache)->p, msg, ## args); 			\
     } while(0)
 
 #define RPKI_WARN(p, msg, args...) RPKI_LOG(L_WARN, p, msg, ## args);

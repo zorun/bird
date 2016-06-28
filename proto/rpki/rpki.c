@@ -226,7 +226,7 @@ rpki_cache_change_state(struct rpki_cache *cache, const enum rpki_cache_state ne
     return;
 
   cache->state = new_state;
-  CACHE_TRACE(D_EVENTS, cache, "Changing state", rpki_cache_state_to_str(old_state), rpki_cache_state_to_str(new_state));
+  CACHE_TRACE(D_EVENTS, cache, "Changing from %s to %s state", rpki_cache_state_to_str(old_state), rpki_cache_state_to_str(new_state));
 
   switch (new_state)
   {
