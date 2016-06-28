@@ -55,10 +55,6 @@ struct rpki_cache {
   pool *pool;				/* Pool containing cache objects */
   struct rpki_proto *p;
 
-  struct channel *roa4_channel;
-  struct channel *roa6_channel;
-  u8 refresh_channels;			/* For non-incremental updates using rt_refresh_begin(), rt_refresh_end() */
-
   struct rpki_tr_sock *tr_sock;		/* Transport specific socket */
   enum rpki_cache_state state;		/* RPKI_CS_* */
   u32 session_id;
@@ -112,6 +108,10 @@ const char *rpki_check_expire_interval(uint seconds);
 struct rpki_proto {
   struct proto p;
   struct rpki_cache *cache;
+
+  struct channel *roa4_channel;
+  struct channel *roa6_channel;
+  u8 refresh_channels;			/* For non-incremental updates using rt_refresh_begin(), rt_refresh_end() */
 };
 
 struct rpki_config {

@@ -662,12 +662,12 @@ rpki_handle_cache_response_pdu(struct rpki_cache *cache, struct pdu_cache_respon
        * server. We need to load new ones and kick out missing ones.  So start
        * a refresh cycle.
        */
-      if (cache->roa4_channel)
-	rt_refresh_begin(cache->roa4_channel->table, cache->roa4_channel);
-      if (cache->roa6_channel)
-	rt_refresh_begin(cache->roa6_channel->table, cache->roa6_channel);
+      if (cache->p->roa4_channel)
+	rt_refresh_begin(cache->p->roa4_channel->table, cache->p->roa4_channel);
+      if (cache->p->roa6_channel)
+	rt_refresh_begin(cache->p->roa6_channel->table, cache->p->roa6_channel);
 
-      cache->refresh_channels = 1;
+      cache->p->refresh_channels = 1;
     }
     cache->session_id = pdu->session_id;
     cache->request_session_id = 0;
@@ -732,9 +732,9 @@ rpki_handle_prefix_pdu(struct rpki_cache *cache, void *pdu)
   ASSERT(type == IPV4_PREFIX || type == IPV6_PREFIX);
 
   if (type == IPV4_PREFIX)
-    channel = cache->roa4_channel;
+    channel = cache->p->roa4_channel;
   if (type == IPV6_PREFIX)
-    channel = cache->roa6_channel;
+    channel = cache->p->roa6_channel;
 
   net_addr_union addr = {};
   rpki_prefix_pdu_2_net_addr(pdu, &addr);
@@ -809,13 +809,13 @@ rpki_handle_end_of_data_pdu(struct rpki_cache *cache, void *pdu)
 		(cf->keep_expire_interval ? "keeps " : ""),  cache->expire_interval);
   }
 
-  if (cache->refresh_channels)
+  if (cache->p->refresh_channels)
   {
-    cache->refresh_channels = 0;
-    if (cache->roa4_channel)
-      rt_refresh_end(cache->roa4_channel->table, cache->roa4_channel);
-    if (cache->roa6_channel)
-      rt_refresh_end(cache->roa6_channel->table, cache->roa6_channel);
+    cache->p->refresh_channels = 0;
+    if (cache->p->roa4_channel)
+      rt_refresh_end(cache->p->roa4_channel->table, cache->p->roa4_channel);
+    if (cache->p->roa6_channel)
+      rt_refresh_end(cache->p->roa6_channel->table, cache->p->roa6_channel);
   }
 
   cache->last_update = now;

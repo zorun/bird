@@ -564,8 +564,6 @@ rpki_init_cache(struct rpki_proto *p, struct rpki_config *cf)
   cache->pool = pool;
   cache->p = p;
 
-  proto_configure_channel(&p->p, &cache->roa4_channel, proto_cf_find_channel(p->p.cf, NET_ROA4));
-  proto_configure_channel(&p->p, &cache->roa6_channel, proto_cf_find_channel(p->p.cf, NET_ROA6));
 
   cache->state = RPKI_CS_SHUTDOWN;
   cache->request_session_id = 1;
@@ -671,12 +669,6 @@ rpki_reconfigure_cache(struct rpki_proto *p, struct rpki_cache *cache, struct rp
 {
   u8 try_fast_reconnect = 0;
 
-  if (!proto_configure_channel(&p->p, &cache->roa4_channel, proto_cf_find_channel(p->p.cf, NET_ROA4)) ||
-      !proto_configure_channel(&p->p, &cache->roa6_channel, proto_cf_find_channel(p->p.cf, NET_ROA6)))
-  {
-    CACHE_TRACE(D_EVENTS, cache, "Channels changed");
-    return NEED_RESTART;
-  }
 
   if (strcmp(old->hostname, new->hostname) != 0)
   {
@@ -744,12 +736,14 @@ rpki_reconfigure(struct proto *P, struct proto_config *CF)
   struct rpki_config *old = (void *) p->p.cf;
   struct rpki_cache *cache = p->cache;
 
-  P->cf = CF;
-  if (rpki_reconfigure_cache(p, cache, new, old) == SUCCESSFUL_RECONF)
-    return SUCCESSFUL_RECONF;
+  if (!proto_configure_channel(&p->p, &p->roa4_channel, proto_cf_find_channel(CF, NET_ROA4)) ||
+      !proto_configure_channel(&p->p, &p->roa6_channel, proto_cf_find_channel(CF, NET_ROA6)))
+    return NEED_RESTART;
 
-  P->cf = (void *) old;
-  return NEED_RESTART;
+  if (rpki_reconfigure_cache(p, cache, new, old) != SUCCESSFUL_RECONF)
+    return NEED_RESTART;
+
+  return SUCCESSFUL_RECONF;
 }
 
 
@@ -761,6 +755,10 @@ static struct proto *
 rpki_init(struct proto_config *CF)
 {
   struct proto *P = proto_new(CF);
+  struct rpki_proto *p = (void *) P;
+
+  proto_configure_channel(&p->p, &p->roa4_channel, proto_cf_find_channel(CF, NET_ROA4));
+  proto_configure_channel(&p->p, &p->roa6_channel, proto_cf_find_channel(CF, NET_ROA6));
 
   return P;
 }
@@ -848,13 +846,13 @@ rpki_show_proto_info(struct proto *P)
     rpki_show_proto_info_timer("Retry interval:", cache->retry_interval, cache->retry_timer);
     rpki_show_proto_info_timer("Expire interval:", cache->expire_interval, cache->expire_timer);
 
-    if (cache->roa4_channel)
-      channel_show_info(cache->roa4_channel);
+    if (p->roa4_channel)
+      channel_show_info(p->roa4_channel);
     else
       cli_msg(-1006, "  No roa4 channel");
 
-    if (cache->roa6_channel)
-      channel_show_info(cache->roa6_channel);
+    if (p->roa6_channel)
+      channel_show_info(p->roa6_channel);
     else
       cli_msg(-1006, "  No roa6 channel");
   }
