@@ -937,14 +937,19 @@ rpki_err_hook(struct birdsock *sk, int error_num)
 {
   struct rpki_cache *cache = sk->data;
 
-  /* Zero means EOF */
-  if (!error_num)
-    return;
-
-  if (sk->err)
-    CACHE_TRACE(D_EVENTS, cache, "Lost connection: %s", sk->err);
+  if (error_num)
+  {
+    /* sk->err may contains a SSH error description */
+    if (sk->err)
+      CACHE_TRACE(D_EVENTS, cache, "Lost connection: %s", sk->err);
+    else
+      CACHE_TRACE(D_EVENTS, cache, "Lost connection: %M", error_num);
+  }
   else
-    CACHE_TRACE(D_EVENTS, cache, "Lost connection: %M", error_num);
+  {
+    CACHE_TRACE(D_EVENTS, cache, "The other side closed a connection");
+  }
+
 
   rpki_cache_change_state(cache, RPKI_CS_ERROR_TRANSPORT);
 }
