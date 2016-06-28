@@ -28,11 +28,11 @@
 
 /* The return values for rpki_tr_ functions */
 enum rpki_tr_rtvals {
-  RPKI_TR_SUCCESS = 0,			/* Operation was successful */
-  RPKI_TR_ERROR = -1,			/* Error occurred */
-  RPKI_TR_WOULDBLOCK = -2,		/* No data is available on the socket */
-  RPKI_TR_INTR = -3,			/* Call was interrupted from a signal */
-  RPKI_TR_CLOSED = -4			/* Connection closed */
+  RPKI_TR_SUCCESS 		= 0,	/* Operation was successful */
+  RPKI_TR_ERROR 		= -1,	/* Error occurred */
+  RPKI_TR_WOULDBLOCK 		= -2,	/* No data is available on the socket */
+  RPKI_TR_INTR 			= -3,	/* Call was interrupted from a signal */
+  RPKI_TR_CLOSED 		= -4	/* Connection closed */
 };
 
 /* A transport socket structure */

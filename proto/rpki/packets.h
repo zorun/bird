@@ -32,8 +32,8 @@
 
 /* Return values */
 enum rpki_rtvals {
-  RPKI_SUCCESS = 0,
-  RPKI_ERROR = -1
+  RPKI_SUCCESS 			= 0,
+  RPKI_ERROR 			= -1
 };
 
 int rpki_send_serial_query(struct rpki_cache *cache);

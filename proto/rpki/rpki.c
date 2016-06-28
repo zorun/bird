@@ -152,17 +152,17 @@ rpki_table_remove_roa(struct rpki_cache *cache, struct channel *channel, const n
  */
 
 static const char *str_cache_states[] = {
-    [RPKI_CS_CONNECTING] = "Connecting",
-    [RPKI_CS_ESTABLISHED] = "Established",
-    [RPKI_CS_RESET] = "Reseting",
-    [RPKI_CS_SYNC_START] = "Sync-Start",
-    [RPKI_CS_SYNC_RUNNING] = "Sync-Running",
-    [RPKI_CS_FAST_RECONNECT] = "Fast-Reconnect",
-    [RPKI_CS_NO_INCR_UPDATE_AVAIL] = "No-Increment-Update-Available",
-    [RPKI_CS_ERROR_NO_DATA_AVAIL] = "Cache-Error-No-Data-Available",
-    [RPKI_CS_ERROR_FATAL] = "Fatal-Protocol-Error",
-    [RPKI_CS_ERROR_TRANSPORT] = "Transport-Error",
-    [RPKI_CS_SHUTDOWN] = "Down"
+  [RPKI_CS_CONNECTING] 		= "Connecting",
+  [RPKI_CS_ESTABLISHED] 	= "Established",
+  [RPKI_CS_RESET] 		= "Reseting",
+  [RPKI_CS_SYNC_START] 		= "Sync-Start",
+  [RPKI_CS_SYNC_RUNNING] 	= "Sync-Running",
+  [RPKI_CS_FAST_RECONNECT] 	= "Fast-Reconnect",
+  [RPKI_CS_NO_INCR_UPDATE_AVAIL]= "No-Increment-Update-Available",
+  [RPKI_CS_ERROR_NO_DATA_AVAIL] = "Cache-Error-No-Data-Available",
+  [RPKI_CS_ERROR_FATAL] 	= "Fatal-Protocol-Error",
+  [RPKI_CS_ERROR_TRANSPORT] 	= "Transport-Error",
+  [RPKI_CS_SHUTDOWN] 		= "Down"
 };
 
 /**

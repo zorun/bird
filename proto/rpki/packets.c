@@ -23,60 +23,61 @@
 #define RPKI_DELETE_FLAG	0
 
 enum rpki_transmit_type {
-  RPKI_RECV = 0,
-  RPKI_SEND = 1,
+  RPKI_RECV 			= 0,
+  RPKI_SEND 			= 1,
 };
 
 enum pdu_error_type {
-  CORRUPT_DATA = 0,
-  INTERNAL_ERROR = 1,
-  NO_DATA_AVAIL = 2,
-  INVALID_REQUEST = 3,
-  UNSUPPORTED_PROTOCOL_VER = 4,
-  UNSUPPORTED_PDU_TYPE = 5,
-  WITHDRAWAL_OF_UNKNOWN_RECORD = 6,
-  DUPLICATE_ANNOUNCEMENT = 7,
-  PDU_TOO_BIG = 32
+  CORRUPT_DATA 			= 0,
+  INTERNAL_ERROR 		= 1,
+  NO_DATA_AVAIL 		= 2,
+  INVALID_REQUEST 		= 3,
+  UNSUPPORTED_PROTOCOL_VER 	= 4,
+  UNSUPPORTED_PDU_TYPE 		= 5,
+  WITHDRAWAL_OF_UNKNOWN_RECORD 	= 6,
+  DUPLICATE_ANNOUNCEMENT 	= 7,
+  PDU_TOO_BIG 			= 32
 };
 
 static const char *str_pdu_error_type[] = {
-      [CORRUPT_DATA] = "Corrupt-Data",
-      [INTERNAL_ERROR] = "Internal-Error",
-      [NO_DATA_AVAIL] = "No-Data-Available",
-      [INVALID_REQUEST] = "Invalid-Request",
-      [UNSUPPORTED_PROTOCOL_VER] = "Unsupported-Protocol-Version",
-      [UNSUPPORTED_PDU_TYPE] = "Unsupported-PDU-Type",
-      [WITHDRAWAL_OF_UNKNOWN_RECORD] = "Withdrawal-Of-Unknown-Record",
-      [DUPLICATE_ANNOUNCEMENT] = "Duplicate-Announcement",
-      [PDU_TOO_BIG] = "PDU-Too-Big",
+  [CORRUPT_DATA] 		= "Corrupt-Data",
+  [INTERNAL_ERROR] 		= "Internal-Error",
+  [NO_DATA_AVAIL] 		= "No-Data-Available",
+  [INVALID_REQUEST] 		= "Invalid-Request",
+  [UNSUPPORTED_PROTOCOL_VER] 	= "Unsupported-Protocol-Version",
+  [UNSUPPORTED_PDU_TYPE] 	= "Unsupported-PDU-Type",
+  [WITHDRAWAL_OF_UNKNOWN_RECORD]= "Withdrawal-Of-Unknown-Record",
+  [DUPLICATE_ANNOUNCEMENT] 	= "Duplicate-Announcement",
+  [PDU_TOO_BIG] 		= "PDU-Too-Big",
 };
 
 enum pdu_type {
-  SERIAL_NOTIFY = 0,
-  SERIAL_QUERY = 1,
-  RESET_QUERY = 2,
-  CACHE_RESPONSE = 3,
-  IPV4_PREFIX = 4,
-  RESERVED = 5,
-  IPV6_PREFIX = 6,
-  END_OF_DATA = 7,
-  CACHE_RESET = 8,
-  ROUTER_KEY = 9,
-  ERROR = 10
+  SERIAL_NOTIFY 		= 0,
+  SERIAL_QUERY 			= 1,
+  RESET_QUERY 			= 2,
+  CACHE_RESPONSE 		= 3,
+  IPV4_PREFIX 			= 4,
+  RESERVED 			= 5,
+  IPV6_PREFIX			= 6,
+  END_OF_DATA 			= 7,
+  CACHE_RESET 			= 8,
+  ROUTER_KEY 			= 9,
+  ERROR 			= 10,
+  PDU_TYPE_MAX
 };
 
 static const char *str_pdu_type[] = {
-    [SERIAL_NOTIFY] = "Serial Notify",
-    [SERIAL_QUERY] = "Serial Query",
-    [RESET_QUERY] = "Reset Query",
-    [CACHE_RESPONSE] = "Cache Response",
-    [IPV4_PREFIX] = "IPv4 Prefix",
-    [RESERVED] = "Reserved",
-    [IPV6_PREFIX] = "IPv6 Prefix",
-    [END_OF_DATA] = "End of Data",
-    [CACHE_RESET] = "Cache Reset",
-    [ROUTER_KEY] = "Router Key",
-    [ERROR] = "Error"
+  [SERIAL_NOTIFY] 		= "Serial Notify",
+  [SERIAL_QUERY] 		= "Serial Query",
+  [RESET_QUERY] 		= "Reset Query",
+  [CACHE_RESPONSE] 		= "Cache Response",
+  [IPV4_PREFIX] 		= "IPv4 Prefix",
+  [RESERVED] 			= "Reserved",
+  [IPV6_PREFIX] 		= "IPv6 Prefix",
+  [END_OF_DATA] 		= "End of Data",
+  [CACHE_RESET] 		= "Cache Reset",
+  [ROUTER_KEY] 			= "Router Key",
+  [ERROR] 			= "Error"
 };
 
 /*
@@ -210,20 +211,20 @@ struct pdu_end_of_data_v1 {
   u32 refresh_interval;
   u32 retry_interval;
   u32 expire_interval;
-};
+} PACKED;
 
 static const size_t min_pdu_size[] = {
-    [SERIAL_NOTIFY] = sizeof(struct pdu_serial_notify),
-    [SERIAL_QUERY] = sizeof(struct pdu_serial_query),
-    [RESET_QUERY] = sizeof(struct pdu_reset_query),
-    [CACHE_RESPONSE] = sizeof(struct pdu_cache_response),
-    [IPV4_PREFIX] = sizeof(struct pdu_ipv4),
-    [RESERVED] = sizeof(struct pdu_header),
-    [IPV6_PREFIX] = sizeof(struct pdu_ipv6),
-    [END_OF_DATA] = sizeof(struct pdu_end_of_data_v0),
-    [CACHE_RESET] = sizeof(struct pdu_cache_response),
-    [ROUTER_KEY] = sizeof(struct pdu_header), /* FIXME */
-    [ERROR] = 16,
+  [SERIAL_NOTIFY] 		= sizeof(struct pdu_serial_notify),
+  [SERIAL_QUERY] 		= sizeof(struct pdu_serial_query),
+  [RESET_QUERY] 		= sizeof(struct pdu_reset_query),
+  [CACHE_RESPONSE] 		= sizeof(struct pdu_cache_response),
+  [IPV4_PREFIX] 		= sizeof(struct pdu_ipv4),
+  [RESERVED] 			= sizeof(struct pdu_header),
+  [IPV6_PREFIX] 		= sizeof(struct pdu_ipv6),
+  [END_OF_DATA] 		= sizeof(struct pdu_end_of_data_v0),
+  [CACHE_RESET] 		= sizeof(struct pdu_cache_response),
+  [ROUTER_KEY] 			= sizeof(struct pdu_header), /* FIXME */
+  [ERROR] 			= 16,
 };
 
 static int rpki_send_error_pdu(struct rpki_cache *cache, const void *erroneous_pdu, const u32 err_pdu_len, const enum pdu_error_type error_code, const char *text, const u32 text_len);
@@ -542,7 +543,7 @@ rpki_check_receive_packet(struct rpki_cache *cache, const void *pdu)
     }
   }
 
-  if ((header.type > 10) || (header.ver == RPKI_VERSION_0 && header.type == ROUTER_KEY))
+  if ((header.type >= PDU_TYPE_MAX) || (header.ver == RPKI_VERSION_0 && header.type == ROUTER_KEY))
   {
     CACHE_DBG(cache, "Unsupported PDU type %u received", header.type);
     rpki_send_error_pdu(cache, pdu, header.len, UNSUPPORTED_PDU_TYPE, NULL, 0);
