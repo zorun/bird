@@ -96,14 +96,14 @@ struct pdu_header {
   u8 type;
   u16 reserved;
   u32 len;
-};
+} PACKED;
 
 struct pdu_cache_response {
   u8 ver;
   u8 type;
   u16 session_id;
   u32 len;
-};
+} PACKED;
 
 struct pdu_serial_notify {
   u8 ver;
@@ -111,7 +111,7 @@ struct pdu_serial_notify {
   u16 session_id;
   u32 len;
   u32 serial_num;
-};
+} PACKED;
 
 struct pdu_serial_query {
   u8 ver;
@@ -119,7 +119,7 @@ struct pdu_serial_query {
   u16 session_id;
   u32 len;
   u32 serial_num;
-};
+} PACKED;
 
 struct pdu_ipv4 {
   u8 ver;
@@ -132,7 +132,7 @@ struct pdu_ipv4 {
   u8 zero;
   u32 prefix;
   u32 asn;
-};
+} PACKED;
 
 struct pdu_ipv6 {
   u8 ver;
@@ -145,7 +145,7 @@ struct pdu_ipv6 {
   u8 zero;
   u32 prefix[4];
   u32 asn;
-};
+} PACKED;
 
 /*
  *  0          8          16         24        31
@@ -185,14 +185,14 @@ struct pdu_error {
   u8 rest[];			/* Copy of Erroneous PDU
 				 * Length of Error Text
 				 * Error Diagnostic Message */
-};
+} PACKED;
 
 struct pdu_reset_query {
   u8 ver;
   u8 type;
   u16 flags;
   u32 len;
-};
+} PACKED;
 
 struct pdu_end_of_data_v0 {
   u8 ver;
@@ -200,7 +200,7 @@ struct pdu_end_of_data_v0 {
   u16 session_id;
   u32 len;
   u32 serial_num;
-};
+} PACKED;
 
 struct pdu_end_of_data_v1 {
   u8 ver;
