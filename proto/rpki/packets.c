@@ -689,31 +689,35 @@ rpki_handle_cache_response_pdu(struct rpki_cache *cache, struct pdu_cache_respon
   return RPKI_SUCCESS;
 }
 
-static net_addr_union
-rpki_prefix_pdu_2_net_addr(const void *pdu)
+static net_addr_union *
+rpki_prefix_pdu_2_net_addr(const void *pdu, net_addr_union *n)
 {
-  net_addr_union n = {};
   const enum pdu_type type = get_pdu_type(pdu);
+
+  /*
+   * Note that sizeof(net_addr_roa6) > sizeof(net_addr)
+   * and thence we must use net_addr_union and not only net_addr
+   */
 
   if (type == IPV4_PREFIX)
   {
     const struct pdu_ipv4 *ipv4 = pdu;
-    n.roa4.type = NET_ROA4;
-    n.roa4.length = sizeof(net_addr_roa4);
-    n.roa4.prefix = ip4_from_u32(ipv4->prefix);
-    n.roa4.asn = ipv4->asn;
-    n.roa4.pxlen = ipv4->prefix_len;
-    n.roa4.max_pxlen = ipv4->max_prefix_len;
+    n->roa4.type = NET_ROA4;
+    n->roa4.length = sizeof(net_addr_roa4);
+    n->roa4.prefix = ipv4->prefix;
+    n->roa4.asn = ipv4->asn;
+    n->roa4.pxlen = ipv4->prefix_len;
+    n->roa4.max_pxlen = ipv4->max_prefix_len;
   }
   else if (type == IPV6_PREFIX)
   {
     const struct pdu_ipv6 *ipv6 = pdu;
-    n.roa6.type = NET_ROA6;
-    n.roa6.length = sizeof(net_addr_roa6);
-    memcpy(&n.roa6.prefix, ipv6->prefix, sizeof(n.roa6.prefix));
-    n.roa6.asn = ipv6->asn;
-    n.roa6.pxlen = ipv6->prefix_len;
-    n.roa6.max_pxlen = ipv6->max_prefix_len;
+    n->roa6.type = NET_ROA6;
+    n->roa6.length = sizeof(net_addr_roa6);
+    n->roa6.prefix = ipv6->prefix;
+    n->roa6.asn = ipv6->asn;
+    n->roa6.pxlen = ipv6->prefix_len;
+    n->roa6.max_pxlen = ipv6->max_prefix_len;
   }
 
   return n;
@@ -732,7 +736,8 @@ rpki_handle_prefix_pdu(struct rpki_cache *cache, void *pdu)
   if (type == IPV6_PREFIX)
     channel = cache->roa6_channel;
 
-  net_addr_union addr = rpki_prefix_pdu_2_net_addr(pdu);
+  net_addr_union addr = {};
+  rpki_prefix_pdu_2_net_addr(pdu, &addr);
 
   if (!channel)
   {
