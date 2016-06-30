@@ -121,11 +121,11 @@ rpki_table_add_roa(struct rpki_cache *cache, struct channel *channel, const net_
   struct rpki_proto *p = cache->p;
 
   rta a0 = {
-      .src = p->p.main_source,
-      .source = RTS_RPKI,
-      .scope = SCOPE_UNIVERSE,
-      .cast = RTC_UNICAST,
-      .dest = RTD_BLACKHOLE,
+    .src = p->p.main_source,
+    .source = RTS_RPKI,
+    .scope = SCOPE_UNIVERSE,
+    .cast = RTC_UNICAST,
+    .dest = RTD_BLACKHOLE,
   };
 
   rta *a = rta_lookup(&a0);
@@ -561,7 +561,6 @@ rpki_init_cache(struct rpki_proto *p, struct rpki_config *cf)
   cache->pool = pool;
   cache->p = p;
 
-
   cache->state = RPKI_CS_SHUTDOWN;
   cache->request_session_id = 1;
   cache->version = RPKI_MAX_VERSION;
@@ -912,18 +911,18 @@ rpki_copy_config(struct proto_config *dest, struct proto_config *src)
 }
 
 struct protocol proto_rpki = {
-    .name = 		"RPKI",
-    .template = 	"rpki%d",
-    .preference = 	DEF_PREF_RPKI,
-    .proto_size = 	sizeof(struct rpki_proto),
-    .config_size =	sizeof(struct rpki_config),
-    .init = 		rpki_init,
-    .start = 		rpki_start,
-    .postconfig = 	rpki_postconfig,
-    .channel_mask =	(NB_ROA4 | NB_ROA6),
-    .show_proto_info =	rpki_show_proto_info,
-    .shutdown = 	rpki_shutdown,
-    .copy_config = 	rpki_copy_config,
-    .reconfigure = 	rpki_reconfigure,
-    .get_status = 	rpki_get_status,
+  .name = 		"RPKI",
+  .template = 		"rpki%d",
+  .preference = 	DEF_PREF_RPKI,
+  .proto_size = 	sizeof(struct rpki_proto),
+  .config_size =	sizeof(struct rpki_config),
+  .init = 		rpki_init,
+  .start = 		rpki_start,
+  .postconfig = 	rpki_postconfig,
+  .channel_mask =	(NB_ROA4 | NB_ROA6),
+  .show_proto_info =	rpki_show_proto_info,
+  .shutdown = 		rpki_shutdown,
+  .copy_config = 	rpki_copy_config,
+  .reconfigure = 	rpki_reconfigure,
+  .get_status = 	rpki_get_status,
 };
