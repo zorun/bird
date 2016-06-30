@@ -186,7 +186,10 @@ net_ip4_: IP4 pxlen4
 {
   net_fill_ip4(&($$), $1, $2);
   if (!net_validate_ip4((net_addr_ip4 *) &($$)))
-    cf_error("Invalid IPv4 prefix");
+    cf_error("Invalid IPv4 prefix %I4/%d, maybe you wanted to write %I4/%d or %I4/%d",
+	     ((net_addr_ip4 *) &($$))->prefix, ($$).pxlen,
+	     ip4_and(((net_addr_ip4 *) &($$))->prefix, ip4_mkmask(($$).pxlen)), ($$).pxlen,
+	     ((net_addr_ip4 *) &($$))->prefix, 33-ffs(((net_addr_ip4 *) &($$))->prefix));
 };
 
 net_ip6_: IP6 '/' NUM
@@ -195,7 +198,9 @@ net_ip6_: IP6 '/' NUM
   if ($3 < 0 || $3 > IP6_MAX_PREFIX_LENGTH)
     cf_error("Invalid prefix length %d", $3);
   if (!net_validate_ip6((net_addr_ip6 *) &($$)))
-    cf_error("Invalid IPv6 prefix");
+    cf_error("Invalid IPv6 prefix %I6/%d, maybe you wanted to write %I6/%d",
+	     ((net_addr_ip6 *) &($$))->prefix, ($$).pxlen,
+	     ip6_and(((net_addr_ip6 *) &($$))->prefix, ip6_mkmask(($$).pxlen)), ($$).pxlen);
 };
 
 net_roa4_: net_ip4_ MAX NUM AS NUM
