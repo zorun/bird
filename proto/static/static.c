@@ -277,7 +277,10 @@ static_start(struct proto *p)
     static_add(p, cf, r);
 
   WALK_LIST(r, cf->other_routes)
+  {
+    r->state |= STS_WANT;
     static_install(p, r);
+  }
 
   return PS_UP;
 }
@@ -611,7 +614,10 @@ static_reconfigure(struct proto *p, struct proto_config *CF)
     }
 
   WALK_LIST(r, n->other_routes)
-    static_add(p, n, r);
+  {
+    r->state |= STS_WANT;
+    static_install(p, r);
+  }
   WALK_LIST(r, o->other_routes)
     static_rte_cleanup(p, r);
 
