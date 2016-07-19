@@ -127,7 +127,11 @@ static_install(struct proto *p, struct static_route *r)
     }
   
   if (r->dest == RTDX_RECURSIVE)
-    rta_set_recursive_next_hop(p->main_channel->table, ap, p_igp_table(p), &r->via, &r->via);
+    {
+      ap->nh.labels_prepend = ap->nh.labels = r->label_count;
+      memcpy(ap->nh.label, r->label_stack, r->label_count * sizeof(u32));
+      rta_set_recursive_next_hop(p->main_channel->table, ap, p_igp_table(p), &r->via, &r->via);
+    }
 
   /* We skip rta_lookup() here */
 

@@ -1672,7 +1672,7 @@ struct rta *
 bgp_decode_attrs(struct bgp_conn *conn, byte *attr, uint len, struct linpool *pool, int mandatory)
 {
   struct bgp_proto *bgp = conn->bgp;
-  rta *a = lp_alloc(pool, sizeof(struct rta));
+  rta *a = lp_alloc(pool, RTA_MAX_SIZE);
   uint flags, code, l, i, type;
   int errcode;
   byte *z, *attr_start;
@@ -1681,7 +1681,7 @@ bgp_decode_attrs(struct bgp_conn *conn, byte *attr, uint len, struct linpool *po
   struct adata *ad;
   int withdraw = 0;
 
-  bzero(a, sizeof(rta));
+  bzero(a, RTA_MAX_SIZE);
   a->source = RTS_BGP;
   a->scope = SCOPE_UNIVERSE;
   a->cast = RTC_UNICAST;
